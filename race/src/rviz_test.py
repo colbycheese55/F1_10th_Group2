@@ -34,7 +34,7 @@ def callback(data):
 
     sphere_marker = Marker()
 
-    sphere_marker.header.frame_id = "car_9_laser"
+    sphere_marker.header.frame_id = "car_2_laser"
     sphere_marker.header.stamp = rospy.Time.now()
 
     # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
@@ -75,7 +75,7 @@ def callback(data):
 
     # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3
     arrow_marker = Marker()
-    arrow_marker.header.frame_id = "car_9_laser"
+    arrow_marker.header.frame_id = "car_2_laser"
     arrow_marker.type = 0
     arrow_marker.header.stamp = rospy.Time.now()
     arrow_marker.id = 1
@@ -95,6 +95,6 @@ def callback(data):
    
 if __name__=='__main__':
     rospy.init_node("rviz_test", anonymous=False)   
-    sub = rospy.Subscriber("/car_9/scan",LaserScan, callback)
+    sub = rospy.Subscriber("/car_2/scan",LaserScan, callback)
     rospy.spin()
 

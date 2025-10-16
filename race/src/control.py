@@ -23,7 +23,7 @@ vel_input = 0.0	#TODO
 
 # Publisher for moving the car.
 # TODO: Use the coorect topic /car_x/offboard/command. The multiplexer listens to this topic
-command_pub = rospy.Publisher('/car_9/offboard/command', AckermannDrive, queue_size = 1)
+command_pub = rospy.Publisher('/car_2/offboard/command', AckermannDrive, queue_size = 1)
 
 def control(data):
 	global prev_error
