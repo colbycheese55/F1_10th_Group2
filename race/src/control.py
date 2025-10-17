@@ -10,8 +10,7 @@ kd = 0.0 #TODO
 ki = 0.0 #TODO
 servo_offset = 0.0	# zero correction offset in case servo is misaligned and has a bias in turning.
 prev_error = 0.0
-
-old_angle = 0.0
+integral_error = 0.0
 
 
 # This code can input desired velocity from the user.
@@ -29,35 +28,42 @@ command_pub = rospy.Publisher('/car_2/offboard/command', AckermannDrive, queue_s
 
 def control(data):
 	global prev_error
+	global integral_error
 	global vel_input
 	global kp
 	global kd
-	# global angle = 0.0
-	global old_angle
+	global ki
 
 	pid_error = data.pid_error
 
 	print("PID Control Node is Listening to error")
 
-	## Your PID code goes here
-	#TODO: Use kp, ki & kd to implement a PID controller
-	angular_velocity = kp * pid_error + kd * (pid_error - prev_error)
+	## PID controller implementation
+	# Proportional term
+	P = kp * pid_error
+	
+	# Integral term
+	integral_error += pid_error
+	I = ki * integral_error
+	
+	# Derivative term
+	D = kd * (pid_error - prev_error)
+	
+	# Update previous error
 	prev_error = pid_error
-	# new_angle = old_angle - angular_velocity + servo_offset
 
-	# 1. Scale the error
-	# 2. Apply the PID equation on error to compute steering
+	# Calculate steering angle using PID equation
+	angle = P + I + D + servo_offset
 
 	# An empty AckermannDrive message is created. You will populate the steering_angle and the speed fields.
 	command = AckermannDrive()
 
-	# TODO: Make sure the steering value is within bounds [-100,100]
-	angle = old_angle - angular_velocity + servo_offset
+	# Make sure the steering value is within bounds [-100,100]
 	if angle > 100:
 		angle = 100
 	elif angle < -100:
 		angle = -100
-	old_angle = angle
+	
 	command.steering_angle = angle
 
 	# TODO: Make sure the velocity is within bounds [0,100]
@@ -73,10 +79,10 @@ if __name__ == '__main__':
 	global kd
 	global ki
 	global vel_input
-	kp = input("Enter Kp Value: ")
-	kd = input("Enter Kd Value: ")
-	ki = input("Enter Ki Value: ")
-	vel_input = input("Enter desired velocity: ")
+	kp = float(input("Enter Kp Value: "))
+	kd = float(input("Enter Kd Value: "))
+	ki = float(input("Enter Ki Value: "))
+	vel_input = float(input("Enter desired velocity: "))
 	rospy.init_node('pid_controller', anonymous=True)
     # subscribe to the error topic
 	rospy.Subscriber("error", pid_input, control)
