@@ -23,10 +23,10 @@ def getRange(data,angle):
     # Outputs length in meters to object with angle in lidar scan field of view
     # Make sure to take care of NaNs etc.
 	
-	# Convert our angle (0° = right) to LIDAR frame (0° = right is at 30° in LIDAR)
-	# LIDAR scans from right to left with 240° FoV
+	# Convert our angle (thetha = right) to LIDAR frame (thetha = right is at 30 in LIDAR)
+	# LIDAR scans from right to left with 240 FoV
 
-	# angle_min corresponds to -30° (right side), angle_max corresponds to 210° (left side)
+	# angle_min corresponds to -30 (right side), angle_max corresponds to 210 (left side)
 	lidar_angle = angle + 30.0  # Offset by 30 degrees to convert to LIDAR frame
 	
 	# index = (desired_angle - angle_min) / angle_increment
