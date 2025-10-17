@@ -30,7 +30,7 @@ def getRange(data,angle):
 	lidar_angle = angle + 30.0  # Offset by 30 degrees to convert to LIDAR frame
 	
 	# index = (desired_angle - angle_min) / angle_increment
-	index = (math.radians(lidar_angle) - data.angle_min) / data.angle_increment
+	index = (math.radians(lidar_angle)) / data.angle_increment
 	index = int(index)
 	
 	# check bounds
