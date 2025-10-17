@@ -11,6 +11,8 @@ ki = 0.0 #TODO
 servo_offset = 0.0	# zero correction offset in case servo is misaligned and has a bias in turning.
 prev_error = 0.0
 
+old_angle = 0.0
+
 
 # This code can input desired velocity from the user.
 # velocity must be between [0,100] to move forward.
@@ -30,12 +32,18 @@ def control(data):
 	global vel_input
 	global kp
 	global kd
-	global angle = 0.0
+	# global angle = 0.0
+	global old_angle
+
+	pid_error = data.pid_error
 
 	print("PID Control Node is Listening to error")
 
 	## Your PID code goes here
 	#TODO: Use kp, ki & kd to implement a PID controller
+	angular_velocity = kp * pid_error + kd * (pid_error - prev_error)
+	prev_error = pid_error
+	new_angle = old_angle - angular_velocity + servo_offset
 
 	# 1. Scale the error
 	# 2. Apply the PID equation on error to compute steering
@@ -44,7 +52,13 @@ def control(data):
 	command = AckermannDrive()
 
 	# TODO: Make sure the steering value is within bounds [-100,100]
-	command.steering_angle = angle
+	angle = old_angle - angular_velocity + servo_offset
+	if angle > 100:
+		angle = 100
+	elif angle < -100:
+		angle = -100
+	old_angle = angle
+	command.steering_angle = new_angle
 
 	# TODO: Make sure the velocity is within bounds [0,100]
 	command.speed = vel_input
