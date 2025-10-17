@@ -43,7 +43,7 @@ def control(data):
 	#TODO: Use kp, ki & kd to implement a PID controller
 	angular_velocity = kp * pid_error + kd * (pid_error - prev_error)
 	prev_error = pid_error
-	new_angle = old_angle - angular_velocity + servo_offset
+	# new_angle = old_angle - angular_velocity + servo_offset
 
 	# 1. Scale the error
 	# 2. Apply the PID equation on error to compute steering
@@ -58,7 +58,7 @@ def control(data):
 	elif angle < -100:
 		angle = -100
 	old_angle = angle
-	command.steering_angle = new_angle
+	command.steering_angle = angle
 
 	# TODO: Make sure the velocity is within bounds [0,100]
 	command.speed = vel_input
