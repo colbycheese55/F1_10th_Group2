@@ -5,8 +5,6 @@ import math
 from sensor_msgs.msg import LaserScan
 from race.msg import pid_input 
 
-import numpy as np
-
 # Some useful variable declarations.
 angle_range = 240	# Hokuyo 4LX has 240 degrees FoV for scan
 forward_projection = 1.5	# distance (in m) that we project the car forward for correcting the error. You have to adjust this.
@@ -40,16 +38,11 @@ def getRange(data,angle):
 		return 0.0
 	
 	# Get the range value
-	distances = data.ranges[index-3:index+4]  # Take a small window to average
-	for i in range(len(distances)):
-		if math.isinf(distances[i]) or math.isnan(distances[i]):
-			distances[i] = 4.0  # Replace inf/nan with a large distance
-
-	distance = np.median(distances)  # Use median to reduce noise
+	distance = data.ranges[index]
 	
 	# Handle NaN and inf values
-	# if math.isnan(distance) or math.isinf(distance):
-	# 	return 0.0
+	if math.isnan(distance) or math.isinf(distance):
+		return 0.0
 	
 	return distance
 
