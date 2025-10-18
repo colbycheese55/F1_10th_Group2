@@ -20,7 +20,9 @@ integral_error = 0.0
 # 25: Slow and steady
 # 35: Nice Autonomous Pace
 # > 40: Careful, what you do here. Only use this if your autonomous steering is very reliable.
-vel_input = 0.0	#TODO
+max_velocity = 40.0	# Maximum velocity on straightaways (low error)
+min_velocity = 20.0	# Minimum velocity during turns (high error)
+velocity_scale_factor = 1.0  # Scaling factor for velocity adjustment based on error
 
 # Publisher for moving the car.
 # TODO: Use the coorect topic /car_x/offboard/command. The multiplexer listens to this topic
@@ -29,14 +31,16 @@ command_pub = rospy.Publisher('/car_2/offboard/command', AckermannDrive, queue_s
 def control(data):
 	global prev_error
 	global integral_error
-	global vel_input
+	global max_velocity
+	global min_velocity
+	global velocity_scale_factor
 	global kp
 	global kd
 	global ki
 
 	pid_error = data.pid_error
 
-	print("PID Control Node is Listening to error")
+	print("PID Control Node is Listening to error: %.3f" % pid_error)
 
 	## PID controller implementation
 	# Proportional term
@@ -66,8 +70,26 @@ def control(data):
 	
 	command.steering_angle = angle
 
-	# TODO: Make sure the velocity is within bounds [0,100]
-	command.speed = vel_input
+	# Dynamic velocity scaling based on error
+	# Use exponential decay for smooth velocity reduction
+	# velocity = max_velocity * e^(-scale_factor * |error|^2) + min_velocity
+	# This ensures velocity decreases smoothly as error increases
+	error_magnitude = abs(pid_error)
+	velocity_reduction = math.exp(-velocity_scale_factor * error_magnitude * error_magnitude)
+	velocity = min_velocity + (max_velocity - min_velocity) * velocity_reduction
+	
+	# Alternative linear approach (commented out):
+	# velocity = max_velocity - velocity_scale_factor * error_magnitude
+	# velocity = max(min_velocity, min(max_velocity, velocity))
+	
+	# Make sure the velocity is within bounds [0,100]
+	if velocity > 100:
+		velocity = 100
+	elif velocity < 0:
+		velocity = 0
+	
+	command.speed = velocity
+	print("Velocity: %.2f" % velocity)
 
 	# Move the car autonomously
 	command_pub.publish(command)
@@ -78,11 +100,20 @@ if __name__ == '__main__':
 	global kp
 	global kd
 	global ki
-	global vel_input
+	global max_velocity
+	global min_velocity
+	global velocity_scale_factor
+	
+	print("=== PID Controller Configuration ===")
 	kp = float(input("Enter Kp Value: "))
 	kd = float(input("Enter Kd Value: "))
 	ki = float(input("Enter Ki Value: "))
-	vel_input = float(input("Enter desired velocity: "))
+	
+	print("\n=== Dynamic Velocity Configuration ===")
+	#max_velocity = float(input("Enter maximum velocity (straightaways): "))
+	#min_velocity = float(input("Enter minimum velocity (turns): "))
+	velocity_scale_factor = float(input("Enter velocity scale factor (suggested: 10-50): "))
+	
 	rospy.init_node('pid_controller', anonymous=True)
     # subscribe to the error topic
 	rospy.Subscriber("error", pid_input, control)
