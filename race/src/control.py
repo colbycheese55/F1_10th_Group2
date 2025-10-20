@@ -107,8 +107,10 @@ def publish_steering_arrow(steering_angle):
 	marker.scale.y = 0.05  #  width
 	marker.scale.z = 0.05  #  height
 	
-	marker.color.r = 1.0
-	marker.color.g = 0
+	# Set color based on steering direction (green for straight, red for sharp turns)
+	steering_magnitude = abs(steering_angle) / 100.0  # Normalize to [0,1]
+	marker.color.r = steering_magnitude
+	marker.color.g = 1.0 - steering_magnitude
 	marker.color.b = 0.0
 	marker.color.a = 1.0
 	
