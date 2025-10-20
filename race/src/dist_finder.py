@@ -78,8 +78,7 @@ def callback(data):
 	# Calculate error (difference between desired and projected distance)
 	error = desired_distance - CD
 
-	msg = pid_input()	# An empty msg is created of the type pid_input
-	# this is the error that you want to send to the PID for steering correction.
+	msg = pid_input()
 	msg.pid_error = error
 	msg.pid_vel = vel		# velocity error can also be sent.
 	pub.publish(msg)
