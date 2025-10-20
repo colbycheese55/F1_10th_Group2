@@ -1,23 +1,7 @@
 <launch>
+  <node pkg="race" type="control.py" name="pid_controller" output="screen" />
 
-  <!-- Launch move_base in autonomous mode -->
-  <include file="$(find move_base)/launch/move_base.launch">
-    <arg name="listen_offboard" value="true"/>
-  </include>
-
-  <!-- Start the PID controller -->
-  <node pkg="race" type="control.py" name="pid_controller" output="screen">
-    <!-- You can pass params here if needed -->
-    <param name="kp" value="1.0"/>
-    <param name="ki" value="0.0"/>
-    <param name="kd" value="0.5"/>
-    <param name="velocity" value="1.5"/>
-  </node>
-
-  <!-- Start the distance finder -->
   <node pkg="race" type="dist_finder.py" name="distance_finder" output="screen" />
 
-  <!-- Launch remote teleop -->
-  <include file="$(find move_base)/launch/remote_teleop.launch" />
 
 </launch>
