@@ -35,13 +35,10 @@ car_footprint_pub = rospy.Publisher('/car_footprint', Marker, queue_size=1)
 steering_arrow_pub = rospy.Publisher('/steering_arrow', Marker, queue_size=1)
 
 # Car dimensions (Traxxas Rally dimensions)
-CAR_LENGTH = 0.50  # 20 inches = 0.5 meters
-CAR_WIDTH = 0.20   # approximately 10 inches = 0.25 meters
+CAR_LENGTH = 0.50
+CAR_WIDTH = 0.20 
 
 def publish_car_footprint():
-	"""
-	Publish a polygon marker representing the car's footprint in RViz
-	"""
 	marker = Marker()
 	marker.header.frame_id = "car_2_base_link"  # Car's coordinate frame
 	marker.header.stamp = rospy.Time.now()
@@ -50,17 +47,14 @@ def publish_car_footprint():
 	marker.type = Marker.LINE_STRIP
 	marker.action = Marker.ADD
 	
-	# Set the scale (line width)
-	marker.scale.x = 0.05  # Line thickness
+	marker.scale.x = 0.05 
 	
-	# Set the color (blue)
 	marker.color.r = 0.0
 	marker.color.g = 0.0
 	marker.color.b = 1.0
-	marker.color.a = 1.0  # Alpha (transparency)
+	marker.color.a = 1.0 
 	
 	# Define the rectangle corners (car footprint)
-	# Assuming car center is at origin, front is +x direction
 	half_length = CAR_LENGTH / 2.0
 	half_width = CAR_WIDTH / 2.0
 	
@@ -88,25 +82,18 @@ def publish_car_footprint():
 	p4.y = -half_width
 	p4.z = 0.0
 	
-	# Add points to create closed rectangle
+	# Create closed rectangle
 	marker.points.append(p1)
 	marker.points.append(p2)
 	marker.points.append(p3)
 	marker.points.append(p4)
-	marker.points.append(p1)  # Close the loop
+	marker.points.append(p1) 
 	
-	# Set lifetime (0 means forever)
 	marker.lifetime = rospy.Duration(0)
 	
 	car_footprint_pub.publish(marker)
 
 def publish_steering_arrow(steering_angle):
-	"""
-	Publish an arrow marker showing the steering direction in RViz
-	
-	Args:
-		steering_angle: The steering angle from the controller (in degrees or radians, normalized)
-	"""
 	marker = Marker()
 	marker.header.frame_id = "car_2_base_link"  # Car's coordinate frame
 	marker.header.stamp = rospy.Time.now()
@@ -116,12 +103,14 @@ def publish_steering_arrow(steering_angle):
 	marker.action = Marker.ADD
 	
 	# Arrow dimensions
-	marker.scale.x = 0.05   # Arrow length
-	marker.scale.y = 0.05  # Arrow width
-	marker.scale.z = 0.05  # Arrow height
+	marker.scale.x = 0.05   #  length
+	marker.scale.y = 0.05  #  width
+	marker.scale.z = 0.05  #  height
 	
-	marker.color.r = 1.0
-	marker.color.g = 0
+	# Set color based on steering direction (green for straight, red for sharp turns)
+	steering_magnitude = abs(steering_angle) / 100.0  # Normalize to [0,1]
+	marker.color.r = steering_magnitude
+	marker.color.g = 1.0 - steering_magnitude
 	marker.color.b = 0.0
 	marker.color.a = 1.0
 	
@@ -133,9 +122,9 @@ def publish_steering_arrow(steering_angle):
 	start = Point()
 	start.x = CAR_LENGTH / 2.0
 	start.y = 0.0
-	start.z = 0.1  # Slightly above ground
+	start.z = 0.1
 	
-	# End point (pointing in steering direction)
+	# End point (steering direction)
 	arrow_length = 0.5
 	end = Point()
 	end.x = start.x + arrow_length * math.cos(angle_rad)
@@ -145,8 +134,7 @@ def publish_steering_arrow(steering_angle):
 	marker.points.append(start)
 	marker.points.append(end)
 	
-	# Set lifetime
-	marker.lifetime = rospy.Duration(0.1)  # Update frequently
+	marker.lifetime = rospy.Duration(0.1)
 	
 	steering_arrow_pub.publish(marker)
 
@@ -164,21 +152,14 @@ def control(data):
 
 	print("PID Control Node is Listening to error: %.3f" % pid_error)
 
-	## PID controller implementation
-	# Proportional term
 	P = kp * pid_error
 	
-	# Integral term
 	integral_error += pid_error
 	I = ki * integral_error
 	
-	# Derivative term
 	D = kd * (pid_error - prev_error)
-	
-	# Update previous error
 	prev_error = pid_error
 
-	# Calculate steering angle using PID equation
 	angle = P + I + D + servo_offset
 
 	# An empty AckermannDrive message is created. You will populate the steering_angle and the speed fields.
@@ -192,17 +173,10 @@ def control(data):
 	
 	command.steering_angle = angle
 
-	# Dynamic velocity scaling based on error
-	# Use exponential decay for smooth velocity reduction
-	# velocity = max_velocity * e^(-scale_factor * |error|^2) + min_velocity
-	# This ensures velocity decreases smoothly as error increases
+	# Dynamic velocity scaling
 	error_magnitude = abs(pid_error)
 	velocity_reduction = math.exp(-velocity_scale_factor * error_magnitude * error_magnitude)
 	velocity = min_velocity + (max_velocity - min_velocity) * velocity_reduction
-	
-	# Alternative linear approach (commented out):
-	# velocity = max_velocity - velocity_scale_factor * error_magnitude
-	# velocity = max(min_velocity, min(max_velocity, velocity))
 	
 	# Make sure the velocity is within bounds [0,100]
 	if velocity > 100:
@@ -236,9 +210,7 @@ if __name__ == '__main__':
 	ki = float(input("Enter Ki Value: "))
 	
 	print("\n=== Dynamic Velocity Configuration ===")
-	#max_velocity = float(input("Enter maximum velocity (straightaways): "))
-	#min_velocity = float(input("Enter minimum velocity (turns): "))
-	velocity_scale_factor = float(input("Enter velocity scale factor (suggested: 10-50): "))
+	velocity_scale_factor = float(input("Enter velocity scale factor: "))
 	
 	rospy.init_node('pid_controller', anonymous=True)
     # subscribe to the error topic
