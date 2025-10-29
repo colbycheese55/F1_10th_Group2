@@ -7,6 +7,8 @@ from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDrive
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
+import tf2_ros
+import geometry_msgs.msg
 
 # Configuration parameters
 DISPARITY_THRESHOLD = 0.1  # Threshold for detecting disparities (meters)
@@ -124,31 +126,26 @@ def get_angle_range_indices(angle_min, angle_increment, num_ranges):
     (front-facing semicircle)
     
     LIDAR coordinate frame:
-    - Scans from right to left with 240° FoV
-    - angle_min = -30° (right side), angle_max = 210° (left side)
-    - 0° is directly to the right
-    - 90° is directly in front
-    - 180° is directly to the left
+    - Scans from right to left with 240 FoV
+    - angle_min = -30 (right side), angle_max = 210 (left side)
+    - 0 is directly to the right
+    - 90 is directly in front
+    - 180 is directly to the left
+    
+    We want the front-facing semicircle, so we look at LIDAR angles from 
+    approximately 30 (45 right of front) to 150 (45 left of front)
+    to avoid looking too far to the sides or behind.
     """
-    # We want to look at angles from 0° (right) to 180° (left) to cover the front semicircle
-    # In the LIDAR frame, this is already -30° to 210°, but we want to focus on 
-    # roughly 0° to 180° in the car's reference frame (front-facing)
+    # In LIDAR frame, we want angles roughly from 30 to 150 
+    # (covering front 120 with some margin)
+    # This corresponds to -60 to +60 relative to car's forward direction
     
-    # Target angles in car frame: we want front-facing, so approximately 0° to 180°
-    # These correspond to LIDAR frame angles (add 30° offset):
-    # Car frame -30° to 210° maps to LIDAR data indices
-    
-    # For front-facing semicircle, use angles from 0° to 180° (right to left, covering front)
-    target_min_angle = math.radians(0)    # Right side of front semicircle
-    target_max_angle = math.radians(180)  # Left side of front semicircle
-    
-    # Convert to LIDAR frame (add 30° offset)
-    lidar_min_angle = target_min_angle + math.radians(30)
-    lidar_max_angle = target_max_angle + math.radians(30)
+    target_min_angle = math.radians(30)   # 30 in LIDAR frame
+    target_max_angle = math.radians(150)  # 150 in LIDAR frame
     
     # Find corresponding indices
-    start_idx = int((lidar_min_angle - angle_min) / angle_increment)
-    end_idx = int((lidar_max_angle - angle_min) / angle_increment)
+    start_idx = int((target_min_angle - angle_min) / angle_increment)
+    end_idx = int((target_max_angle - angle_min) / angle_increment)
     
     # Clamp to valid range
     start_idx = max(0, min(start_idx, num_ranges - 1))
@@ -159,25 +156,74 @@ def get_angle_range_indices(angle_min, angle_increment, num_ranges):
 
 def find_best_gap(ranges, angle_min, angle_increment, start_idx, end_idx):
     """
-    Find the best gap (farthest point or center of widest gap) in the specified range
+    Find the best gap (deepest point in the widest/deepest gap) in the specified range
     Returns the index and angle of the target point
     """
-    # Search for the farthest point in the front-facing range
-    max_dist = 0.0
-    max_idx = start_idx
+    # Define minimum distance to consider as "free space"
+    min_free_distance = 0.5  # meters
+    
+    # Find all gaps (contiguous sequences of free space)
+    gaps = []
+    in_gap = False
+    gap_start = start_idx
     
     for i in range(start_idx, end_idx + 1):
-        if ranges[i] > max_dist:
-            max_dist = ranges[i]
-            max_idx = i
+        if ranges[i] > min_free_distance:
+            if not in_gap:
+                # Start of a new gap
+                gap_start = i
+                in_gap = True
+        else:
+            if in_gap:
+                # End of current gap
+                gaps.append((gap_start, i - 1))
+                in_gap = False
     
-    # Alternative: Find the widest gap (optional enhancement)
-    # You can implement gap width detection here if desired
+    # Don't forget the last gap if it extends to the end
+    if in_gap:
+        gaps.append((gap_start, end_idx))
     
-    # Calculate the angle corresponding to this index
-    target_angle = angle_min + (max_idx * angle_increment)
+    # If no gaps found, return the farthest point as fallback
+    if len(gaps) == 0:
+        max_dist = 0.0
+        max_idx = start_idx
+        for i in range(start_idx, end_idx + 1):
+            if ranges[i] > max_dist:
+                max_dist = ranges[i]
+                max_idx = i
+        target_angle = angle_min + (max_idx * angle_increment)
+        return max_idx, target_angle, max_dist
     
-    return max_idx, target_angle, max_dist
+    # Find the best gap: deepest point in the largest gap
+    best_gap = None
+    best_gap_score = 0.0
+    
+    for gap_start, gap_end in gaps:
+        # Calculate gap width (angular extent)
+        gap_width = gap_end - gap_start + 1
+        
+        # Find the deepest (farthest) point in this gap
+        max_dist_in_gap = 0.0
+        max_idx_in_gap = gap_start
+        for i in range(gap_start, gap_end + 1):
+            if ranges[i] > max_dist_in_gap:
+                max_dist_in_gap = ranges[i]
+                max_idx_in_gap = i
+        
+        # Score combines gap width and depth
+        # Prioritize depth more than width
+        gap_score = max_dist_in_gap * 2.0 + gap_width * 0.01
+        
+        if gap_score > best_gap_score:
+            best_gap_score = gap_score
+            best_gap = (max_idx_in_gap, max_dist_in_gap)
+    
+    # Target the deepest point in the best gap
+    target_idx = best_gap[0]
+    max_distance = best_gap[1]
+    target_angle = angle_min + (target_idx * angle_increment)
+    
+    return target_idx, target_angle, max_distance
 
 
 def calculate_steering_angle(target_angle_rad):
@@ -185,9 +231,11 @@ def calculate_steering_angle(target_angle_rad):
     Convert target angle (in radians) to steering command [-100, 100]
     
     LIDAR coordinate frame:
-    - 0° is directly to the right
-    - 90° is directly in front
-    - 180° is directly to the left
+    - angle_min ≈ -30 (right side)
+    - 0 is directly to the right
+    - 90 is directly in front
+    - 180 is directly to the left
+    - angle_max ≈ 210 (left side)
     
     Steering:
     - 0 = straight ahead
@@ -197,14 +245,14 @@ def calculate_steering_angle(target_angle_rad):
     # Convert radians to degrees
     target_angle_deg = math.degrees(target_angle_rad)
     
-    # In LIDAR frame, 90° is straight ahead
-    # Calculate deviation from straight (90°)
+    # In LIDAR frame, 90 is straight ahead (directly in front)
+    # Calculate deviation from straight (90)
     angle_deviation = target_angle_deg - 90.0
     
     # Map angle deviation to steering range
-    # If target is > 90° (to the left), steering should be positive (turn left)
-    # If target is < 90° (to the right), steering should be negative (turn right)
-    # Assuming reasonable steering angles: ±45° deviation maps to ±100 steering
+    # If target is > 90 (to the left), steering should be positive (turn left)
+    # If target is < 90 (to the right), steering should be negative (turn right)
+    # Assuming reasonable steering angles: 45 deviation maps to 100 steering
     steering_angle = (angle_deviation / 45.0) * 100.0
     
     # Clamp to valid range
@@ -452,10 +500,11 @@ def lidar_callback(data):
     publish_target_point(target_angle, max_distance)
     publish_processed_scan(data, processed_ranges)
     
-    # Debug output
+    # Debug output with detailed information
     rospy.loginfo_throttle(1.0, 
-        "Target angle: %.2f deg, Steering: %.2f, Velocity: %.2f, Max distance: %.2f m, Disparities: %d" % 
-        (math.degrees(target_angle), steering_angle, velocity, max_distance, len(disparities)))
+        "LIDAR: angle_min=%.2f angle_max=%.2f | Target: idx=%d angle=%.2f | Steering: %.2f | Vel: %.2f | Dist: %.2f m | Disp: %d" % 
+        (math.degrees(data.angle_min), math.degrees(data.angle_max), 
+         target_idx, math.degrees(target_angle), steering_angle, velocity, max_distance, len(disparities)))
 
 
 if __name__ == '__main__':
