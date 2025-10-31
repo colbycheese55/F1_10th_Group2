@@ -36,6 +36,8 @@ MIN_STEERING = -100.0
 
 # Gap & target selection
 MIN_FREE_DISTANCE = 0.50        # m (threshold to consider a ray as "free")
+CENTER_BIAS = 0.15              # 0..1 (0=center of gap; 1=deepest point). Use a mix.
+                                 # We'll aim at weighted center: (1-CENTER_BIAS)*gap_center + CENTER_BIAS*deepest
 
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
