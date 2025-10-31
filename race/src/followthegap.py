@@ -345,7 +345,13 @@ class FollowTheGapNode(object):
 
     def publish_processed_scan(self, original_scan, processed_ranges):
         out = LaserScan()
+        # Use the original header as a base but ensure stamp and frame_id are valid for RViz.
         out.header = original_scan.header
+        # If the incoming scan has an empty frame_id (some drivers do), set a sane default
+        if not out.header.frame_id:
+            out.header.frame_id = "car_2_laser"
+        # Use current time to avoid RViz ignoring an old/zero timestamp
+        out.header.stamp = rospy.Time.now()
         out.angle_min = original_scan.angle_min
         out.angle_max = original_scan.angle_max
         out.angle_increment = original_scan.angle_increment
@@ -353,7 +359,8 @@ class FollowTheGapNode(object):
         out.scan_time = original_scan.scan_time
         out.range_min = original_scan.range_min
         out.range_max = original_scan.range_max
-        out.ranges = processed_ranges.tolist()
+        # Ensure ranges are native Python floats (not numpy types)
+        out.ranges = [float(x) for x in processed_ranges.tolist()]
         self.processed_scan_pub.publish(out)
 
     # ---------- Callback ----------
