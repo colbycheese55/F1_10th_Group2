@@ -172,8 +172,8 @@ class FollowTheGapNode(object):
             deepest_idx = gs + local_max_off
             deepest_dist = ranges[deepest_idx]
 
-            # score: depth weighted more than width
-            score = deepest_dist * 2.0 + 0.01 * width
+            # score: width weighted more than depth (prioritize widest gap)
+            score = width * 2.0 + 0.1 * deepest_dist
             if score > best_score:
                 best_score = score
                 best = (gs, ge, deepest_idx, deepest_dist)
