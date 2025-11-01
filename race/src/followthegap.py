@@ -35,7 +35,7 @@ MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
 # Gap & target selection
-MIN_FREE_DISTANCE = 1.0        # m (threshold to consider a ray as "free")
+MIN_FREE_DISTANCE = 2.0        # m (threshold to consider a ray as "free")
 CENTER_BIAS = 0.15              # 0..1 (0=center of gap; 1=deepest point). Use a mix.
                                  # We'll aim at weighted center: (1-CENTER_BIAS)*gap_center + CENTER_BIAS*deepest
 
@@ -287,31 +287,41 @@ class FollowTheGapNode(object):
         return (target_idx, target_angle_lidar, target_dist)
     
     def find_target_direction_widest_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
-        # make a list of gaps where every sample is >= MIN_DIST
-        gaps = list()
-        window = ranges[start_idx:end_idx + 1]
-        start = None
-        for i in range(len(window)):
-            sample = window[i]
-            if sample >= MIN_FREE_DISTANCE and start is None:
-                start = i
-            elif sample < MIN_FREE_DISTANCE and start is not None:
-                end = i
-                diff = end - start
-                gaps.append((diff, start, end))
-                start = None
-        if start is not None:
-            end = len(window)
-            diff = end - start
-            gaps.append((diff, start, end))
+        # Ensure start_idx <= end_idx
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
 
-        # Find the widest gap
+        # make a list of gaps where every sample is >= MIN_FREE_DISTANCE
+        gaps = []  # elements are tuples (width, local_start, local_end_exclusive)
+        window = ranges[start_idx:end_idx + 1]
+        local_start = None
+        for i, sample in enumerate(window):
+            if sample >= MIN_FREE_DISTANCE:
+                if local_start is None:
+                    local_start = i
+            else:
+                if local_start is not None:
+                    local_end = i  # exclusive
+                    width = local_end - local_start
+                    gaps.append((width, local_start, local_end))
+                    local_start = None
+
+        # trailing gap to end of window
+        if local_start is not None:
+            local_end = len(window)
+            width = local_end - local_start
+            gaps.append((width, local_start, local_end))
+
+        # Find the widest gap (largest width). If multiple equal-width gaps exist, pick the first.
         if gaps:
-            width, start, end = max(gaps)
-            midpoint = int((start + end) // 2)
-            target_lidar_angle = angle_min + midpoint * angle_increment
-            target_dist = ranges[midpoint]
-            return (midpoint, target_lidar_angle, target_dist)
+            width, local_start, local_end = max(gaps, key=lambda x: x[0])
+            # midpoint in local window coordinates (use integer floor)
+            midpoint_local = int(local_start + (local_end - local_start) // 2)
+            # convert to global index in the full ranges array
+            target_idx = start_idx + midpoint_local
+            target_lidar_angle = angle_min + target_idx * angle_increment
+            target_dist = ranges[target_idx]
+            return (target_idx, target_lidar_angle, target_dist)
         else:
             rospy.logwarn("No valid gaps found; defaulting to center")
             mid_idx = (start_idx + end_idx) // 2
