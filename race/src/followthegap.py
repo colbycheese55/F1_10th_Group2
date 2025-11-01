@@ -303,7 +303,7 @@ class FollowTheGapNode(object):
         # Find the widest gap
         if gaps:
             width, start, end = max(gaps)
-            midpoint = (start + end) // 2
+            midpoint = int((start + end) // 2)
             target_lidar_angle = angle_min + midpoint * angle_increment
             target_dist = ranges[midpoint]
             return (midpoint, target_lidar_angle, target_dist)
