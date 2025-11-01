@@ -23,7 +23,7 @@ STEERING_SIGN = +1.0
 
 # Disparity / bubble
 DISPARITY_THRESHOLD = 0.20      # m (0.1-0.2m is good starting point)
-CAR_WIDTH = 0.20                # m
+CAR_WIDTH = 0.31                # m
 CAR_LENGTH = 0.50               # m
 SAFETY_MARGIN = 0.45            # m (tolerance around car half-width)
 MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blocked)
