@@ -504,9 +504,9 @@ class FollowTheGapNode(object):
         steering_cmd = self.calculate_steering(target_angle_lidar)
         
         # Check side clearance for cornering safety
-        if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
-            # Override steering to go straight if obstacle detected on turning side
-            steering_cmd = 0.0
+        #if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
+        #    # Override steering to go straight if obstacle detected on turning side
+        #    steering_cmd = 0.0
         
         velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
 
