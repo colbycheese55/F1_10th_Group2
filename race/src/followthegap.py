@@ -44,6 +44,7 @@ STEERING_GAIN = 2.2             # Multiplier for steering response
 
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
+LIDAR_SMOOTH_WINDOW = 5         # Window size for moving average filter (odd number recommended)
 
 # Visualization rate
 VIS_LIFETIME = 0.1              # seconds
@@ -91,7 +92,36 @@ class FollowTheGapNode(object):
         ranges = np.where(np.isfinite(ranges), ranges, 10.0)
         # Treat anything too close as blocked (clip)
         ranges = np.where(ranges < MIN_RANGE_OBSTACLE, MIN_RANGE_OBSTACLE, ranges)
+        
+        # Apply moving average smoothing filter
+        if LIDAR_SMOOTH_WINDOW > 1:
+            ranges = self.smooth_lidar(ranges, LIDAR_SMOOTH_WINDOW)
+        
         return ranges
+    
+    def smooth_lidar(self, ranges, window_size):
+        """
+        Apply a moving average filter to smooth lidar data.
+        Uses numpy convolution for efficiency.
+        
+        Args:
+            ranges: numpy array of lidar ranges
+            window_size: size of the smoothing window (odd number recommended)
+        
+        Returns:
+            Smoothed numpy array of the same size
+        """
+        if window_size <= 1:
+            return ranges
+        
+        # Create a normalized averaging kernel
+        kernel = np.ones(window_size) / window_size
+        
+        # Apply convolution with 'same' mode to maintain array size
+        # Use 'same' mode to keep the same length as input
+        smoothed = np.convolve(ranges, kernel, mode='same')
+        
+        return smoothed
 
     # ---------- Disparity & bubble inflation ----------
 
