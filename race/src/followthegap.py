@@ -25,7 +25,7 @@ STEERING_SIGN = +1.0
 DISPARITY_THRESHOLD = 0.20      # m (0.1-0.2m is good starting point)
 CAR_WIDTH = 0.20                # m
 CAR_LENGTH = 0.50               # m
-SAFETY_MARGIN = 0.35            # m (tolerance around car half-width)
+SAFETY_MARGIN = 0.45            # m (tolerance around car half-width)
 MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blocked)
 
 # Speed / steering scaling (course-specific scale: -100..+100)
@@ -35,7 +35,7 @@ MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
 # Gap & target selection
-MIN_FREE_DISTANCE = 0.50        # m (threshold to consider a ray as "free")
+MIN_FREE_DISTANCE = 1.0        # m (threshold to consider a ray as "free")
 CENTER_BIAS = 0.15              # 0..1 (0=center of gap; 1=deepest point). Use a mix.
                                  # We'll aim at weighted center: (1-CENTER_BIAS)*gap_center + CENTER_BIAS*deepest
 
@@ -264,7 +264,7 @@ class FollowTheGapNode(object):
 
     # ---------- Gap finding ----------
 
-    def find_target_direction(self, ranges, angle_min, angle_increment, start_idx, end_idx):
+    def find_target_direction_farthest_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
         """
         Find the sample with the farthest distance in the valid range.
         This is the target direction.
@@ -285,6 +285,32 @@ class FollowTheGapNode(object):
         target_angle_lidar = angle_min + target_idx * angle_increment
         
         return (target_idx, target_angle_lidar, target_dist)
+    
+    def find_target_direction_widest_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
+        # make a list of gaps where every sample is >= MIN_DIST
+        gaps = list()
+        window = ranges[start_idx:end_idx + 1]
+        start = None
+        for sample in window:
+            if sample >= MIN_FREE_DISTANCE and start is None:
+                start = sample
+            elif sample < MIN_FREE_DISTANCE and start is not None:
+                end = sample
+                diff = end - start
+                gaps.append((diff, start, end))
+                start = None
+
+        # Find the widest gap
+        if gaps:
+            width, start, end = max(gaps)
+            midpoint = (start + end) // 2
+            target_lidar_angle = angle_min + midpoint * angle_increment
+            target_dist = ranges[midpoint]
+            return (midpoint, target_lidar_angle, target_dist)
+        else:
+            rospy.logwarn("No valid gaps found; defaulting to center")
+            mid_idx = (start_idx + end_idx) // 2
+            return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
 
     # ---------- Control ----------
 
@@ -462,7 +488,10 @@ class FollowTheGapNode(object):
         i0, i1 = self.front_window_indices(scan.angle_min, scan.angle_increment, len(processed))
 
         # Step 5: Find the sample with farthest distance → target direction
-        target_idx, target_angle_lidar, max_dist = self.find_target_direction(
+        # target_idx, target_angle_lidar, max_dist = self.find_target_direction_farthest_gap(
+        #     processed, scan.angle_min, scan.angle_increment, i0, i1
+        # )
+        target_idx, target_angle_lidar, max_dist = self.find_target_direction_widest_gap(
             processed, scan.angle_min, scan.angle_increment, i0, i1
         )
 
