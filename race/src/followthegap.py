@@ -25,12 +25,12 @@ STEERING_SIGN = +1.0
 DISPARITY_THRESHOLD = 0.20      # m (0.1-0.2m is good starting point)
 CAR_WIDTH = 0.20                # m
 CAR_LENGTH = 0.50               # m
-SAFETY_MARGIN = 0.15            # m (tolerance around car half-width)
+SAFETY_MARGIN = 0.35            # m (tolerance around car half-width)
 MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blocked)
 
 # Speed / steering scaling (course-specific scale: -100..+100)
 MAX_VELOCITY = 40.0             # straightaways
-MIN_VELOCITY = 15.0             # tight turns
+MIN_VELOCITY = 20.0             # tight turns
 MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
