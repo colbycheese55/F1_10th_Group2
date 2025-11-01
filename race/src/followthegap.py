@@ -46,6 +46,9 @@ STEERING_GAIN = 2.2             # Multiplier for steering response
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
 LIDAR_SMOOTH_WINDOW = 5         # Window size for moving average filter (odd number recommended)
 
+# Cornering safety
+SIDE_SAFETY_DISTANCE = 0.30     # m (minimum safe distance for side/rear obstacles when cornering)
+
 # Visualization rate
 VIS_LIFETIME = 0.1              # seconds
 
@@ -190,6 +193,74 @@ class FollowTheGapNode(object):
         i0 = clamp(i0, 0, n - 1)
         i1 = clamp(i1, 0, n - 1)
         return (i0, i1) if i0 <= i1 else (i1, i0)
+
+    # ---------- Cornering safety check ----------
+
+    def check_side_clearance(self, ranges, angle_min, angle_increment, steering_cmd):
+        """
+        Check for obstacles on the sides/rear of the car to prevent corner strikes.
+        
+        Scans LIDAR samples below -90° or above +90° (in car frame) to check the sides
+        and back of the car. If any point is below the safe distance on the side of the
+        car in the direction the car is turning, returns False to override steering.
+        
+        Args:
+            ranges: preprocessed lidar ranges
+            angle_min: minimum angle of lidar scan (radians)
+            angle_increment: angular resolution (radians)
+            steering_cmd: current steering command (positive = left, negative = right)
+        
+        Returns:
+            True if safe to turn, False if should go straight instead
+        """
+        n = len(ranges)
+        
+        # Determine which side to check based on steering direction
+        # Positive steering = turning left, negative = turning right
+        if abs(steering_cmd) < 5.0:  # Nearly straight, no need to check
+            return True
+        
+        turning_left = steering_cmd > 0
+        
+        # Define side/rear regions in car frame
+        # Left side/rear: +90° to +180°
+        # Right side/rear: -90° to -180°
+        if turning_left:
+            # Check left side/rear (+90° to +180° in car frame)
+            car_min = math.radians(90.0)
+            car_max = math.radians(180.0)
+        else:
+            # Check right side/rear (-90° to -180° in car frame)
+            car_min = math.radians(-180.0)
+            car_max = math.radians(-90.0)
+        
+        # Convert to LiDAR frame
+        lid_min = car_to_lidar_angle(car_min)
+        lid_max = car_to_lidar_angle(car_max)
+        
+        # Get indices for this region
+        i0 = int((lid_min - angle_min) / angle_increment)
+        i1 = int((lid_max - angle_min) / angle_increment)
+        i0 = clamp(i0, 0, n - 1)
+        i1 = clamp(i1, 0, n - 1)
+        
+        # Ensure we scan in the right direction
+        if i0 > i1:
+            i0, i1 = i1, i0
+        
+        # Check all points in this region
+        for i in range(i0, i1 + 1):
+            if ranges[i] < SIDE_SAFETY_DISTANCE:
+                # Obstacle too close on the side we're turning toward
+                rospy.logwarn_throttle(
+                    0.5,
+                    "Corner safety: Obstacle detected at %.2fm on %s side. Overriding turn.",
+                    ranges[i],
+                    "left" if turning_left else "right"
+                )
+                return False
+        
+        return True
 
     # ---------- Gap finding ----------
 
@@ -397,6 +468,12 @@ class FollowTheGapNode(object):
 
         # Step 6: Actuate - calculate steering and velocity
         steering_cmd = self.calculate_steering(target_angle_lidar)
+        
+        # Check side clearance for cornering safety
+        if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
+            # Override steering to go straight if obstacle detected on turning side
+            steering_cmd = 0.0
+        
         velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
 
         # Publish AckermannDrive message (steering [-100,100], velocity [0,100])
