@@ -291,14 +291,19 @@ class FollowTheGapNode(object):
         gaps = list()
         window = ranges[start_idx:end_idx + 1]
         start = None
-        for sample in window:
+        for i in range(len(window)):
+            sample = window[i]
             if sample >= MIN_FREE_DISTANCE and start is None:
-                start = sample
+                start = i
             elif sample < MIN_FREE_DISTANCE and start is not None:
-                end = sample
+                end = i
                 diff = end - start
                 gaps.append((diff, start, end))
                 start = None
+        if start is not None:
+            end = len(window)
+            diff = end - start
+            gaps.append((diff, start, end))
 
         # Find the widest gap
         if gaps:
