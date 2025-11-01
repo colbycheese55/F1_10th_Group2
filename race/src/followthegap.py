@@ -149,8 +149,8 @@ class FollowTheGapNode(object):
 
     def front_window_indices(self, angle_min, angle_increment, n):
         # Car frame front window: [-90°, +90°]
-        car_min = math.radians(-90.0)
-        car_max = math.radians(+90.0)
+        car_min = math.radians(-70.0)
+        car_max = math.radians(+70.0)
         # Convert those to LiDAR frame
         lid_min = car_to_lidar_angle(car_min)
         lid_max = car_to_lidar_angle(car_max)
