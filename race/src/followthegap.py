@@ -45,8 +45,8 @@ class FollowTheGapNode:
         rospy.Subscriber('/car_2/scan', LaserScan, self.lidar_callback)
         
         rospy.loginfo("Follow the Gap node initialized")
-        rospy.loginfo(f"Car width: {self.CAR_WIDTH}m, Safety margin: {self.SAFETY_MARGIN}m")
-        rospy.loginfo(f"Disparity threshold: {self.DISPARITY_THRESHOLD}m")
+        rospy.loginfo("Car width: {}m, Safety margin: {}m".format(self.CAR_WIDTH, self.SAFETY_MARGIN))
+        rospy.loginfo("Disparity threshold: {}m".format(self.DISPARITY_THRESHOLD))
     
     def preprocess_lidar(self, ranges):
         """
@@ -506,16 +506,15 @@ class FollowTheGapNode:
             self.angle_increment = data.angle_increment
             self.range_min = data.range_min
             self.range_max = data.range_max
-            rospy.loginfo(f"LIDAR parameters initialized: angle_min={math.degrees(self.angle_min):.1f}°, "
-                         f"angle_max={math.degrees(self.angle_max):.1f}°, "
-                         f"increment={math.degrees(self.angle_increment):.3f}°")
+            rospy.loginfo("LIDAR parameters initialized: angle_min={:.1f}deg, angle_max={:.1f}deg, increment={:.3f}deg".format(
+                         math.degrees(self.angle_min), math.degrees(self.angle_max), math.degrees(self.angle_increment)))
         
         # Step 1: Preprocess LIDAR data
         ranges = self.preprocess_lidar(data.ranges)
         
         # Step 2: Find disparities
         disparities = self.find_disparities(ranges)
-        rospy.loginfo_throttle(1.0, f"Found {len(disparities)} disparities")
+        rospy.loginfo_throttle(1.0, "Found {} disparities".format(len(disparities)))
         
         # Step 3: Extend disparities
         extended_ranges = self.extend_disparities(ranges, disparities)
@@ -527,10 +526,8 @@ class FollowTheGapNode:
         steering_angle, speed = self.calculate_steering_and_speed(target_angle, max_distance)
         
         # Log information
-        rospy.loginfo_throttle(1.0, f"Target angle: {math.degrees(target_angle):.1f}°, "
-                              f"Distance: {max_distance:.2f}m, "
-                              f"Steering: {math.degrees(steering_angle):.1f}°, "
-                              f"Speed: {speed:.2f}m/s")
+        rospy.loginfo_throttle(1.0, "Target angle: {:.1f}deg, Distance: {:.2f}m, Steering: {:.1f}deg, Speed: {:.2f}m/s".format(
+                              math.degrees(target_angle), max_distance, math.degrees(steering_angle), speed))
         
         # Publish drive command
         drive_msg = AckermannDrive()
