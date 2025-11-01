@@ -35,7 +35,7 @@ MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
 # Gap & target selection
-MIN_FREE_DISTANCE = 1.0        # m (threshold to consider a ray as "free")
+MIN_FREE_DISTANCE = 2.0        # m (threshold to consider a ray as "free")
 CENTER_BIAS = 0.15              # 0..1 (0=center of gap; 1=deepest point). Use a mix.
                                  # We'll aim at weighted center: (1-CENTER_BIAS)*gap_center + CENTER_BIAS*deepest
 
