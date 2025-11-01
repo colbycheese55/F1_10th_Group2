@@ -22,10 +22,10 @@ LIDAR_ZERO_DEG_IN_CAR_FRAME = 0.0  # degrees
 STEERING_SIGN = +1.0
 
 # Disparity / bubble
-DISPARITY_THRESHOLD = 0.10      # m
+DISPARITY_THRESHOLD = 0.20      # m (0.1-0.2m is good starting point)
 CAR_WIDTH = 0.20                # m
 CAR_LENGTH = 0.50               # m
-SAFETY_MARGIN = 0.15            # m
+SAFETY_MARGIN = 0.15            # m (tolerance around car half-width)
 MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blocked)
 
 # Speed / steering scaling (course-specific scale: -100..+100)
@@ -38,6 +38,9 @@ MIN_STEERING = -100.0
 MIN_FREE_DISTANCE = 0.50        # m (threshold to consider a ray as "free")
 CENTER_BIAS = 0.15              # 0..1 (0=center of gap; 1=deepest point). Use a mix.
                                  # We'll aim at weighted center: (1-CENTER_BIAS)*gap_center + CENTER_BIAS*deepest
+
+# Speed / steering scaling
+STEERING_GAIN = 2.2             # Multiplier for steering response
 
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
@@ -93,55 +96,53 @@ class FollowTheGapNode(object):
     # ---------- Disparity & bubble inflation ----------
 
     def find_disparities(self, ranges):
+        """Step 1: Find disparities - two subsequent points that differ by > threshold."""
         diffs = np.abs(np.diff(ranges))
         return list(np.where(diffs > DISPARITY_THRESHOLD)[0])
 
-    def apply_safety_bubble_to_nearest(self, ranges, angle_increment):
-        """Step 1: Find nearest LIDAR point and put a safety bubble around it."""
-        out = np.copy(ranges)
-        
-        # Find the nearest point (minimum distance)
-        nearest_idx = int(np.argmin(ranges))
-        nearest_dist = ranges[nearest_idx]
-        
-        # Calculate bubble radius in terms of angle
-        half_ang = bubble_half_angle(nearest_dist)
-        num_samples = int(half_ang / angle_increment)
-        num_samples = clamp(num_samples, 0, 100)
-        
-        # Set all points within the bubble to 0 (blocked)
-        for k in range(-num_samples, num_samples + 1):
-            j = nearest_idx + k
-            if 0 <= j < len(out):
-                if out[j] <= nearest_dist + SAFETY_MARGIN:
-                    out[j] = 0.0
-        
-        return out
-
     def extend_disparities(self, ranges, angle_increment, disparities):
-        """Step 2-3: For each disparity, extend safety bubble from closer point."""
+        """
+        Steps 2-4: Disparity Extender Algorithm
+        
+        For each disparity:
+        2. Pick the point at the closer distance
+        3. Calculate number of samples to cover (car half-width + tolerance)
+        4. Starting at the more distant point, overwrite samples with closer distance
+           (Do not overwrite any points that are already closer!)
+        """
         out = np.copy(ranges)
+        
         for idx in disparities:
-            d1, d2 = ranges[idx], ranges[idx + 1]
-            # Identify closer vs farther point
+            d1, d2 = out[idx], out[idx + 1]
+            
+            # Step 2: Identify closer vs farther point
             if d1 <= d2:
-                closer_dist, closer_idx, farther_idx, direction = d1, idx, idx + 1, +1
+                closer_dist = d1
+                closer_idx = idx
+                farther_idx = idx + 1
+                direction = +1  # extend forward
             else:
-                closer_dist, closer_idx, farther_idx, direction = d2, idx + 1, idx, -1
-
-            # Calculate number of samples to cover car width + margin at closer distance
-            half_ang = bubble_half_angle(closer_dist)
-            num = int(half_ang / angle_increment)
-            num = clamp(num, 0, 60)  # cap to avoid wiping out the scan
-
-            # Starting at the farther point, extend toward closer point's distance
-            # Do not overwrite points that are already closer!
-            for k in range(num + 1):
+                closer_dist = d2
+                closer_idx = idx + 1
+                farther_idx = idx
+                direction = -1  # extend backward
+            
+            # Calculate number of samples to cover car half-width + tolerance at closer distance
+            radius = (CAR_WIDTH * 0.5) + SAFETY_MARGIN
+            half_angle = bubble_half_angle(closer_dist)
+            num_samples = int(half_angle / angle_increment)
+            num_samples = clamp(num_samples, 0, 60)  # cap for safety
+            
+            # Step 3-4: Starting at farther point, extend in direction away from closer point
+            # Overwrite with closer distance, but DON'T overwrite already closer points
+            for k in range(num_samples + 1):
                 j = farther_idx + direction * k
                 if j < 0 or j >= len(out):
                     break
+                # Step 4: Only overwrite if current point is farther than closer_dist
                 if out[j] > closer_dist:
                     out[j] = closer_dist
+        
         return out
 
     # ---------- Window selection (front hemisphere in CAR frame) ----------
@@ -162,84 +163,46 @@ class FollowTheGapNode(object):
 
     # ---------- Gap finding ----------
 
-    def find_best_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
+    def find_target_direction(self, ranges, angle_min, angle_increment, start_idx, end_idx):
         """
-        Step 3: Find maximum length sequence of consecutive non-zeros (free space).
-        Step 4: Choose the furthest point in the selected gap.
+        Find the sample with the farthest distance in the valid range.
+        This is the target direction.
+        
+        Returns: (target_idx, target_angle_lidar, target_distance)
         """
-        # Identify contiguous "free" sequences (non-zero points after bubble processing)
-        gaps = []
-        in_gap = False
-        gap_start = start_idx
-
-        for i in range(start_idx, end_idx + 1):
-            # Consider point "free" if it's above minimum threshold (treated as non-zero)
-            if ranges[i] > MIN_FREE_DISTANCE:
-                if not in_gap:
-                    in_gap = True
-                    gap_start = i
-            else:
-                if in_gap:
-                    gaps.append((gap_start, i - 1))
-                    in_gap = False
-        if in_gap:
-            gaps.append((gap_start, end_idx))
-
-        # No gap → fallback to farthest point in range
-        if not gaps:
-            max_idx = start_idx + int(np.argmax(ranges[start_idx:end_idx + 1]))
-            max_dist = ranges[max_idx]
-            target_angle_lidar = angle_min + max_idx * angle_increment
-            return (max_idx, max_idx, target_angle_lidar, max_dist)
-
-        # Find the best gap based on algorithm requirements
-        # Option 1: Maximum length gap (longest consecutive free space)
-        # Option 2: Deepest gap (gap with furthest point)
-        # Let's try both and allow configuration
+        # Simply find the maximum distance in the range
+        if start_idx >= end_idx:
+            # Fallback
+            mid_idx = (start_idx + end_idx) // 2
+            return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
         
-        best_gap = None
-        best_score = -1.0
-        
-        for gs, ge in gaps:
-            width = ge - gs + 1
-            
-            # Find deepest point in this gap
-            sub = ranges[gs:ge + 1]
-            local_max_off = int(np.argmax(sub))
-            deepest_idx = gs + local_max_off
-            deepest_dist = ranges[deepest_idx]
-            
-            # Scoring strategy (can be adjusted):
-            # Prioritize deepest gaps but also consider width
-            # This balances between "widest gap" and "deepest gap"
-            score = deepest_dist * 2.0 + width * 0.1
-            
-            if score > best_score:
-                best_score = score
-                best_gap = (gs, ge, deepest_idx, deepest_dist)
-        
-        gs, ge, deepest_idx, deepest_dist = best_gap
-        
-        # Step 4: Target the FURTHEST point in the selected gap (the deepest point)
-        # This follows the algorithm: "Choose the furthest point in free space"
-        target_idx = deepest_idx
+        # Find index of maximum distance in the valid window
+        window = ranges[start_idx:end_idx + 1]
+        local_max_idx = int(np.argmax(window))
+        target_idx = start_idx + local_max_idx
+        target_dist = ranges[target_idx]
         target_angle_lidar = angle_min + target_idx * angle_increment
         
-        return (gs, ge, target_angle_lidar, ranges[target_idx])
+        return (target_idx, target_angle_lidar, target_dist)
 
     # ---------- Control ----------
 
     def calculate_steering(self, target_angle_lidar):
+        """Calculate steering command from target angle."""
         # Convert to car frame: 0 rad = forward, left positive
         a_car = lidar_to_car_angle(target_angle_lidar)
-        # Map angle deviation (deg) to [-100, 100] with ~45° → 100
+        
+        # Map angle to steering command [-100, 100]
+        # Use proportional control with tunable gain
         dev_deg = math.degrees(a_car)
-        steering_cmd = (dev_deg / 45.0) * 100.0
+        steering_cmd = (dev_deg / 45.0) * 100.0 * STEERING_GAIN
         steering_cmd = clamp(steering_cmd, MIN_STEERING, MAX_STEERING)
         steering_cmd *= STEERING_SIGN
-        # Smooth it
+        
+        # Apply smoothing
         steering_cmd = ANGLE_SMOOTH_ALPHA * self.prev_steering + (1.0 - ANGLE_SMOOTH_ALPHA) * steering_cmd
         self.prev_steering = steering_cmd
+        
         return steering_cmd
 
     def calculate_velocity(self, steering_cmd, max_distance_ahead):
@@ -368,61 +331,71 @@ class FollowTheGapNode(object):
     # ---------- Callback ----------
 
     def lidar_callback(self, scan):
-        # ALGORITHM IMPLEMENTATION:
+        """
+        DISPARITY EXTENDER ALGORITHM:
         
-        # Step 0: Preprocess raw LIDAR data
+        1. Take raw array of LIDAR samples
+        2. Find disparities (large jumps between consecutive points)
+        3. For each disparity:
+           - Pick the closer point
+           - Calculate samples needed to cover car half-width + tolerance
+           - Starting at farther point, overwrite with closer distance
+           - Never overwrite already closer points
+        4. Search filtered distances in front hemisphere (-90° to +90°)
+        5. Find sample with farthest distance → that's target direction
+        6. Actuate car toward target
+        
+        Target: < 10ms processing time
+        """
+        
+        # Step 1: Take raw array and preprocess
         ranges = self.preprocess_lidar(scan)
 
-        # Step 1: Find nearest LIDAR point and put safety bubble around it
-        ranges = self.apply_safety_bubble_to_nearest(ranges, scan.angle_increment)
-
-        # Step 2: Find disparities (large jumps in distance)
+        # Step 2: Find disparities
         disparities = self.find_disparities(ranges)
 
-        # Step 3: Extend safety bubbles around disparities
-        # Starting at farther point, overwrite with closer distance (don't overwrite already closer points)
+        # Step 3: Extend disparities (repeat for every disparity)
         processed = self.extend_disparities(ranges, scan.angle_increment, disparities)
 
-        # Step 4: Search through filtered distances in front hemisphere (-90° to +90° in car frame)
+        # Step 4: Search through filtered distances between -90° and +90° (car frame)
         i0, i1 = self.front_window_indices(scan.angle_min, scan.angle_increment, len(processed))
 
-        # Step 5: Find the maximum gap (longest sequence of free space points)
-        # Step 6: Choose the furthest point in that gap as target
-        gs, ge, target_angle_lidar, max_dist = self.find_best_gap(
+        # Step 5: Find the sample with farthest distance → target direction
+        target_idx, target_angle_lidar, max_dist = self.find_target_direction(
             processed, scan.angle_min, scan.angle_increment, i0, i1
         )
 
-        # Step 7: Calculate steering angle toward target point
+        # Step 6: Actuate - calculate steering and velocity
         steering_cmd = self.calculate_steering(target_angle_lidar)
         velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
 
-        # Step 8: Publish AckermannDrive message with steering [-100,100] and velocity [0,100]
+        # Publish AckermannDrive message (steering [-100,100], velocity [0,100])
         cmd = AckermannDrive()
-        cmd.steering_angle = steering_cmd  # course-specific interface expects [-100,100]
+        cmd.steering_angle = steering_cmd
         cmd.speed = velocity_cmd
         self.command_pub.publish(cmd)
 
-        # 9) Visualizations
+        # Visualizations
         self.publish_car_footprint()
         self.publish_steering_arrow(steering_cmd)
         self.publish_disparities(disparities, ranges, scan.angle_min, scan.angle_increment)
         self.publish_target_point(target_angle_lidar, max_dist)
         self.publish_processed_scan(scan, processed)
 
-        # Debug
+        # Debug logging
         rospy.loginfo_throttle(
             1.0,
-            "Gap: [%d,%d] | Target(lidar)=%.1f° | Steering=%.1f | Speed=%.1f | Dist=%.2f m",
-            gs, ge,
+            "Disparities: %d | Target: %.1f° (%.2fm) | Steering: %.1f | Speed: %.1f",
+            len(disparities),
             math.degrees(target_angle_lidar),
+            max_dist,
             steering_cmd,
-            velocity_cmd,
-            max_dist
+            velocity_cmd
         )
 
 def main():
     rospy.init_node('follow_the_gap', anonymous=True)
-    rospy.loginfo("Follow the Gap node started (frame-safe)")
+    rospy.loginfo("Follow the Gap node started (Disparity Extender)")
     _ = FollowTheGapNode()
     rospy.spin()
 
