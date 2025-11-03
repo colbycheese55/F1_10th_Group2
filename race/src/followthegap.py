@@ -552,7 +552,7 @@ class FollowTheGapNode(object):
         # target_idx, target_angle_lidar, max_dist = self.find_target_direction_farthest_gap(
         #     processed, scan.angle_min, scan.angle_increment, i0, i1
         # )
-        target_idx, target_angle_lidar, max_dist = self.find_target_direction_widest_gap(
+        target_idx, target_angle_lidar, max_dist = self.find_target_direction_farthest_distance_in_widest_gap(
             processed, scan.angle_min, scan.angle_increment, i0, i1
         )
 
