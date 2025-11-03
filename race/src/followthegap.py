@@ -327,6 +327,52 @@ class FollowTheGapNode(object):
             mid_idx = (start_idx + end_idx) // 2
             return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
 
+    def find_target_direction_farthest_distance_in_widest_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
+        # Ensure start_idx <= end_idx
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        # make a list of gaps where every sample is >= MIN_FREE_DISTANCE
+        gaps = []  # elements are tuples (width, local_start, local_end_exclusive)
+        window = ranges[start_idx:end_idx + 1]
+        local_start = None
+        for i, sample in enumerate(window):
+            if sample >= MIN_FREE_DISTANCE:
+                if local_start is None:
+                    local_start = i
+            else:
+                if local_start is not None:
+                    local_end = i  # exclusive
+                    width = local_end - local_start
+                    average_local_distance = np.mean(window[local_start:local_end + 1])
+                    gaps.append((width*average_local_distance, local_start, local_end))
+                    local_start = None
+
+        # trailing gap to end of window
+        if local_start is not None:
+            local_end = len(window)
+            width = local_end - local_start
+
+            # Find index of maximum distance in the valid window
+            average_local_distance = np.mean(window[local_start:local_end+1])
+
+            gaps.append((width*average_local_distance, local_start, local_end))
+
+        # Find the widest gap (largest width). If multiple equal-width gaps exist, pick the first.
+        if gaps:
+            width, local_start, local_end = max(gaps, key=lambda x: x[0])
+            # midpoint in local window coordinates (use integer floor)
+            midpoint_local = int(local_start + (local_end - local_start) // 2)
+            # convert to global index in the full ranges array
+            target_idx = start_idx + midpoint_local
+            target_lidar_angle = angle_min + target_idx * angle_increment
+            target_dist = ranges[target_idx]
+            return (target_idx, target_lidar_angle, target_dist)
+        else:
+            rospy.logwarn("No valid gaps found; defaulting to center")
+            mid_idx = (start_idx + end_idx) // 2
+            return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
+
     # ---------- Control ----------
 
     def calculate_steering(self, target_angle_lidar):
