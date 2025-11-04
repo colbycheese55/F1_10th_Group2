@@ -53,6 +53,8 @@ SIDE_SAFETY_DISTANCE = 0.2     # m (minimum safe distance for side/rear obstacle
 # Visualization rate
 VIS_LIFETIME = 0.1              # seconds
 
+steering_hysteresis_queue = list()
+
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -398,8 +400,14 @@ class FollowTheGapNode(object):
         # Apply smoothing
         steering_cmd = ANGLE_SMOOTH_ALPHA * self.prev_steering + (1.0 - ANGLE_SMOOTH_ALPHA) * steering_cmd
         self.prev_steering = steering_cmd
-        
-        return steering_cmd
+
+        steering_hysteresis_queue.append(steering_cmd)
+        if len(steering_hysteresis_queue) > 20:
+            steering_hysteresis_queue.pop(0)
+
+        hyst_steering_cmd = np.median(np.array(steering_hysteresis_queue))
+
+        return hyst_steering_cmd
 
     def calculate_velocity(self, steering_cmd, max_distance_ahead):
         steering_mag = abs(steering_cmd) / MAX_STEERING
