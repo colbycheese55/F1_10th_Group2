@@ -30,7 +30,7 @@ MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blo
 
 # Speed / steering scaling (course-specific scale: -100..+100)
 MAX_VELOCITY = 30.0             # straightaways
-MIN_VELOCITY = 10.0             # tight turns
+MIN_VELOCITY = 10             # tight turns
 MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
