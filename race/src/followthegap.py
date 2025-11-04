@@ -401,19 +401,19 @@ class FollowTheGapNode(object):
         steering_cmd = ANGLE_SMOOTH_ALPHA * self.prev_steering + (1.0 - ANGLE_SMOOTH_ALPHA) * steering_cmd
         self.prev_steering = steering_cmd
 
-        steering_hysteresis_queue.append(steering_cmd)
-        if len(steering_hysteresis_queue) > 20:
-            steering_hysteresis_queue.pop(0)
+        # steering_hysteresis_queue.append(steering_cmd)
+        # if len(steering_hysteresis_queue) > 20:
+        #     steering_hysteresis_queue.pop(0)
 
-        hyst_steering_cmd = np.median(np.array(steering_hysteresis_queue))
+        # hyst_steering_cmd = np.median(np.array(steering_hysteresis_queue))
 
-        return hyst_steering_cmd
+        return steering_cmd
 
     def calculate_velocity(self, steering_cmd, max_distance_ahead):
         steering_mag = abs(steering_cmd) / MAX_STEERING
         v = MIN_VELOCITY + (MAX_VELOCITY - MIN_VELOCITY) * (1.0 - steering_mag)
         if max_distance_ahead < 1.0:
-            v *= 0.5
+            v *= 0.2
         elif max_distance_ahead < 2.0:
             v *= 0.75
         
