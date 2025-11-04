@@ -234,8 +234,8 @@ class FollowTheGapNode(object):
             car_max = math.radians(180.0)
         else:
             # Check right side/rear (-90° to -180° in car frame)
-            car_min = math.radians(-180.0)
-            car_max = math.radians(-90.0)
+            car_min = math.radians(0.0)
+            car_max = math.radians(90.0)
         
         # Convert to LiDAR frame
         lid_min = car_to_lidar_angle(car_min)
@@ -252,9 +252,13 @@ class FollowTheGapNode(object):
             i0, i1 = i1, i0
         
         # Check all points in this region
+        INFRACTION_LIMIT = 10
+        infractions = 0
         for i in range(i0, i1 + 1):
             if ranges[i] < SIDE_SAFETY_DISTANCE:
+                infractions += 1
                 # Obstacle too close on the side we're turning toward
+            if infractions >= INFRACTION_LIMIT:
                 rospy.logwarn_throttle(
                     0.5,
                     "Corner safety: Obstacle detected at %.2fm on %s side. Overriding turn.",
@@ -571,9 +575,9 @@ class FollowTheGapNode(object):
 
         
         # Check side clearance for cornering safety
-        #if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
+        if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
             # Override steering to go straight if obstacle detected on turning side
-            #steering_cmd = 0.0
+            steering_cmd = 0.0
         
         velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
 
