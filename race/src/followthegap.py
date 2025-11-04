@@ -575,7 +575,7 @@ class FollowTheGapNode(object):
 
         
         # Check side clearance for cornering safety
-        if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
+        if not self.check_side_clearance(ranges, scan.angle_min, scan.angle_increment, steering_cmd):
             # Override steering to go straight if obstacle detected on turning side
             steering_cmd = 0.0
         
