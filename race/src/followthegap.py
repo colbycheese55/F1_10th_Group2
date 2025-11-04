@@ -44,6 +44,7 @@ STEERING_GAIN = 2.2             # Multiplier for steering response
 
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
+VELOCITY_SMOOTH_ALPHA = 0.5     # 0..1 (higher = smoother); applied to velocity command
 LIDAR_SMOOTH_WINDOW = 5         # Window size for moving average filter (odd number recommended)
 
 # Cornering safety
@@ -84,6 +85,8 @@ class FollowTheGapNode(object):
         self.processed_scan_pub = rospy.Publisher('/follow_gap/processed_scan', LaserScan, queue_size=1)
 
         self.prev_steering = 0.0  # for smoothing
+
+        self.prev_velocity = 0.0  # for velocity smoothing
 
         rospy.Subscriber("/car_2/scan", LaserScan, self.lidar_callback)
 
@@ -401,6 +404,11 @@ class FollowTheGapNode(object):
             v *= 0.5
         elif max_distance_ahead < 2.0:
             v *= 0.75
+        
+        # Apply smoothing to velocity for gradual speed scaling
+        v = VELOCITY_SMOOTH_ALPHA * self.prev_velocity + (1.0 - VELOCITY_SMOOTH_ALPHA) * v
+        self.prev_velocity = v
+        
         return clamp(v, 0.0, 100.0)
 
     # ---------- Visualization ----------
