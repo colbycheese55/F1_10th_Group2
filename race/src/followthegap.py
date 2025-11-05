@@ -45,7 +45,7 @@ STEERING_GAIN = 2.2             # Multiplier for steering response
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
 VELOCITY_SMOOTH_ALPHA = 0.5     # 0..1 (higher = smoother); applied to velocity command
-LIDAR_SMOOTH_WINDOW = 5         # Window size for moving average filter (odd number recommended)
+LIDAR_SMOOTH_WINDOW = 7         # Window size for moving average filter (odd number recommended)
 
 # Cornering safety
 SIDE_SAFETY_DISTANCE = 0.2     # m (minimum safe distance for side/rear obstacles when cornering)
