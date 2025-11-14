@@ -16,7 +16,7 @@ from geometry_msgs.msg import Point
 # LiDAR mounting / frame alignment:
 # If your LaserScan has 0° ≈ straight ahead, leave this at 0.
 # If your LaserScan has 0° ≈ to the right (and ~90° straight ahead), set this to 90.
-LIDAR_ZERO_DEG_IN_CAR_FRAME = 0.0  # degrees
+LIDAR_ZERO_DEG_IN_CAR_FRAME = 00.0  # degrees
 
 # If your car turns opposite of what you expect, flip this sign to -1.0
 STEERING_SIGN = +1.0
@@ -25,12 +25,12 @@ STEERING_SIGN = +1.0
 DISPARITY_THRESHOLD = 0.20      # m (0.1-0.2m is good starting point)
 CAR_WIDTH = 0.31                # m
 CAR_LENGTH = 0.50               # m
-SAFETY_MARGIN = 0.45            # m (tolerance around car half-width)
+SAFETY_MARGIN = 0.1          # m (tolerance around car half-width)
 MIN_RANGE_OBSTACLE = 0.18       # m (anything closer than this is considered blocked)
 
 # Speed / steering scaling (course-specific scale: -100..+100)
-MAX_VELOCITY = 40.0             # straightaways
-MIN_VELOCITY = 20.0             # tight turns
+MAX_VELOCITY = 30.0             # straightaways
+MIN_VELOCITY = 10             # tight turns
 MAX_STEERING = 100.0
 MIN_STEERING = -100.0
 
@@ -44,13 +44,16 @@ STEERING_GAIN = 2.2             # Multiplier for steering response
 
 # Smoothing
 ANGLE_SMOOTH_ALPHA = 0.5        # 0..1 (higher = smoother); applied to steering command
-LIDAR_SMOOTH_WINDOW = 5         # Window size for moving average filter (odd number recommended)
+VELOCITY_SMOOTH_ALPHA = 0.5     # 0..1 (higher = smoother); applied to velocity command
+LIDAR_SMOOTH_WINDOW = 7         # Window size for moving average filter (odd number recommended)
 
 # Cornering safety
-SIDE_SAFETY_DISTANCE = 0.30     # m (minimum safe distance for side/rear obstacles when cornering)
+SIDE_SAFETY_DISTANCE = 0.2     # m (minimum safe distance for side/rear obstacles when cornering)
 
 # Visualization rate
 VIS_LIFETIME = 0.1              # seconds
+
+steering_hysteresis_queue = list()
 
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
@@ -84,6 +87,8 @@ class FollowTheGapNode(object):
         self.processed_scan_pub = rospy.Publisher('/follow_gap/processed_scan', LaserScan, queue_size=1)
 
         self.prev_steering = 0.0  # for smoothing
+
+        self.prev_velocity = 0.0  # for velocity smoothing
 
         rospy.Subscriber("/car_2/scan", LaserScan, self.lidar_callback)
 
@@ -182,8 +187,8 @@ class FollowTheGapNode(object):
 
     def front_window_indices(self, angle_min, angle_increment, n):
         # Car frame front window: [-90°, +90°]
-        car_min = math.radians(-70.0)
-        car_max = math.radians(+70.0)
+        car_min = math.radians(-90.0)
+        car_max = math.radians(+90.0)
         # Convert those to LiDAR frame
         lid_min = car_to_lidar_angle(car_min)
         lid_max = car_to_lidar_angle(car_max)
@@ -231,8 +236,8 @@ class FollowTheGapNode(object):
             car_max = math.radians(180.0)
         else:
             # Check right side/rear (-90° to -180° in car frame)
-            car_min = math.radians(-180.0)
-            car_max = math.radians(-90.0)
+            car_min = math.radians(0.0)
+            car_max = math.radians(90.0)
         
         # Convert to LiDAR frame
         lid_min = car_to_lidar_angle(car_min)
@@ -249,9 +254,13 @@ class FollowTheGapNode(object):
             i0, i1 = i1, i0
         
         # Check all points in this region
+        INFRACTION_LIMIT = 10
+        infractions = 0
         for i in range(i0, i1 + 1):
             if ranges[i] < SIDE_SAFETY_DISTANCE:
+                infractions += 1
                 # Obstacle too close on the side we're turning toward
+            if infractions >= INFRACTION_LIMIT:
                 rospy.logwarn_throttle(
                     0.5,
                     "Corner safety: Obstacle detected at %.2fm on %s side. Overriding turn.",
@@ -335,6 +344,7 @@ class FollowTheGapNode(object):
         # make a list of gaps where every sample is >= MIN_FREE_DISTANCE
         gaps = []  # elements are tuples (width, local_start, local_end_exclusive)
         window = ranges[start_idx:end_idx + 1]
+        #print(window)
         local_start = None
         for i, sample in enumerate(window):
             if sample >= MIN_FREE_DISTANCE:
@@ -390,23 +400,34 @@ class FollowTheGapNode(object):
         # Apply smoothing
         steering_cmd = ANGLE_SMOOTH_ALPHA * self.prev_steering + (1.0 - ANGLE_SMOOTH_ALPHA) * steering_cmd
         self.prev_steering = steering_cmd
-        
+
+        # steering_hysteresis_queue.append(steering_cmd)
+        # if len(steering_hysteresis_queue) > 20:
+        #     steering_hysteresis_queue.pop(0)
+
+        # hyst_steering_cmd = np.median(np.array(steering_hysteresis_queue))
+
         return steering_cmd
 
     def calculate_velocity(self, steering_cmd, max_distance_ahead):
         steering_mag = abs(steering_cmd) / MAX_STEERING
         v = MIN_VELOCITY + (MAX_VELOCITY - MIN_VELOCITY) * (1.0 - steering_mag)
         if max_distance_ahead < 1.0:
-            v *= 0.5
+            v *= 0.2
         elif max_distance_ahead < 2.0:
             v *= 0.75
+        
+        # Apply smoothing to velocity for gradual speed scaling
+        v = VELOCITY_SMOOTH_ALPHA * self.prev_velocity + (1.0 - VELOCITY_SMOOTH_ALPHA) * v
+        self.prev_velocity = v
+        
         return clamp(v, 0.0, 100.0)
 
     # ---------- Visualization ----------
 
     def publish_car_footprint(self):
         m = Marker()
-        m.header.frame_id = "car_2_base_link"
+        m.header.frame_id = "car_2_laser"
         m.header.stamp = rospy.Time.now()
         m.ns = "car_footprint"
         m.id = 0
@@ -427,7 +448,7 @@ class FollowTheGapNode(object):
 
     def publish_steering_arrow(self, steering_cmd):
         m = Marker()
-        m.header.frame_id = "car_2_base_link"
+        m.header.frame_id = "car_2_laser"
         m.header.stamp = rospy.Time.now()
         m.ns = "steering_arrow"
         m.id = 1
@@ -558,11 +579,13 @@ class FollowTheGapNode(object):
 
         # Step 6: Actuate - calculate steering and velocity
         steering_cmd = self.calculate_steering(target_angle_lidar)
+
+
         
         # Check side clearance for cornering safety
-        #if not self.check_side_clearance(processed, scan.angle_min, scan.angle_increment, steering_cmd):
-        #    # Override steering to go straight if obstacle detected on turning side
-        #    steering_cmd = 0.0
+        if not self.check_side_clearance(ranges, scan.angle_min, scan.angle_increment, steering_cmd):
+            # Override steering to go straight if obstacle detected on turning side
+            steering_cmd = 0.0
         
         velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
 
