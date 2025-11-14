@@ -16,6 +16,11 @@ car_name        = str(sys.argv[1])
 trajectory_name = str(sys.argv[2])
 visualize       = bool(sys.argv[3])
 
+rospy.loginfo('Trajectory Builder initialized with:')
+rospy.loginfo('  Car name: {}'.format(car_name))
+rospy.loginfo('  Trajectory name: {}'.format(trajectory_name))
+rospy.loginfo('  Visualize: {}'.format(visualize))
+
 # Global variables for path tracking and waypoint logging
 global seq
 global prev_x
@@ -29,6 +34,9 @@ prev_y          = 0.0
 path_resolution = 0.1
 # path_resolution is the the minimum distance the car needs to travel in order to log a new waypoint
 
+rospy.loginfo('  Path resolution: {} meters'.format(path_resolution))
+rospy.loginfo('  Initial position: ({}, {})'.format(prev_x, prev_y))
+
 # Initialize a ROS publisher for path visualization if enabled
 if visualize:
     # Topic for visualizing the path in Rviz
@@ -40,6 +48,9 @@ def save_plan():
     # Function to save the planned path into a CSV file
     # Modify the file path below to match the path on the racecar
     file_path = os.path.expanduser('/home/nvidia/catkin_ws/src/f1tenth_purepursuit/path/{}.csv'.format(trajectory_name))
+    rospy.loginfo('Saving trajectory to: {}'.format(file_path))
+    rospy.loginfo('Number of waypoints to save: {}'.format(len(plan)))
+    
     with open(file_path, mode = 'w') as csv_file:
         csv_writer = csv.writer(csv_file, delimiter = ',', quoting = csv.QUOTE_NONNUMERIC)
         for index in range(0, len(plan)):
@@ -47,6 +58,8 @@ def save_plan():
                                  plan[index][1],
                                  plan[index][2],
                                  plan[index][3]])
+    
+    rospy.loginfo('Trajectory saved successfully!')
 
 # Register the save_plan function to be called on exit
 atexit.register(save_plan)
@@ -71,9 +84,16 @@ def odom_callback(data):
     # Round current position to two decimal places
     curr_x = round(data.pose.position.x, 2)
     curr_y = round(data.pose.position.y, 2)
+    
+    # Calculate distance from previous position
+    distance = math.sqrt(math.pow(curr_x - prev_x, 2) + math.pow(curr_y - prev_y, 2))
+    
+    # Debug: Log current position and distance
+    if seq % 10 == 0:  # Log every 10th callback to avoid spam
+        rospy.loginfo('Current position: ({}, {}), Distance from prev: {:.3f}'.format(curr_x, curr_y, distance))
 
     # Log new waypoint if the distance from the previous waypoint is greater than the path_resolution
-    if math.sqrt(math.pow(curr_x - prev_x, 2) + math.pow(curr_y - prev_y, 2)) > path_resolution:
+    if distance > path_resolution:
         point = []
         point.append(curr_x)
         point.append(curr_y)
@@ -82,7 +102,7 @@ def odom_callback(data):
         plan.append(point)
         prev_x = curr_x
         prev_y = curr_y
-        rospy.loginfo('pose logged')
+        rospy.loginfo('Waypoint logged: ({}, {}), Total waypoints: {}'.format(curr_x, curr_y, len(plan)))
 
     # Visualize the path if enabled
     if visualize:
@@ -92,6 +112,7 @@ def odom_callback(data):
 
         # Populate the Path message with waypoints for visualization
         if len(plan) > 0:
+            path.poses = []  # Clear previous poses
             for index in range(0, len(plan)):
                 waypoint = PoseStamped()
                 waypoint.header.frame_id    = frame_id
@@ -103,12 +124,22 @@ def odom_callback(data):
 
         seq = seq + 1
         path_pub.publish(path)
+        
+        if seq % 50 == 0:  # Log visualization updates every 50 cycles
+            rospy.loginfo('Published path visualization with {} waypoints'.format(len(plan)))
     
 
 if __name__ == '__main__':
     try:
+        rospy.loginfo('Initializing ROS node: trajectory_builder')
         rospy.init_node('trajectory_builder', anonymous = True)
-        rospy.Subscriber('/{}/particle_filter/viz/inferred_pose'.format(car_name), PoseStamped, odom_callback)
+        
+        topic_name = '/{}/particle_filter/viz/inferred_pose'.format(car_name)
+        rospy.loginfo('Subscribing to topic: {}'.format(topic_name))
+        rospy.Subscriber(topic_name, PoseStamped, odom_callback)
+        
+        rospy.loginfo('Trajectory builder is now running. Press Ctrl+C to save and exit.')
         rospy.spin()
     except rospy.ROSInterruptException:
+        rospy.loginfo('ROS interrupt received, shutting down...')
         pass
