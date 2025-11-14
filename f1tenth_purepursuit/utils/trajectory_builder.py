@@ -7,6 +7,7 @@ import math
 import atexit
 import os
 import csv
+import signal
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 
@@ -49,6 +50,16 @@ def save_plan():
 
 # Register the save_plan function to be called on exit
 atexit.register(save_plan)
+
+def signal_handler(sig, frame):
+    """Handle SIGINT (Control-C) gracefully"""
+    rospy.loginfo('Control-C detected, saving trajectory...')
+    save_plan()
+    rospy.loginfo('Trajectory saved successfully!')
+    sys.exit(0)
+
+# Register signal handler for Control-C
+signal.signal(signal.SIGINT, signal_handler)
 
 def odom_callback(data):
 # Callback function for odometry updates
