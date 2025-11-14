@@ -60,9 +60,9 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        car_9_base_link:
+        car_2_base_link:
           Value: true
-        car_9_laser:
+        car_2_laser:
           Value: true
         map:
           Value: true
@@ -76,8 +76,8 @@ Visualization Manager:
       Tree:
         map:
           odom:
-            car_9_base_link:
-              car_9_laser:
+            car_2_base_link:
+              car_2_laser:
                 {}
       Update Interval: 0
       Value: true
