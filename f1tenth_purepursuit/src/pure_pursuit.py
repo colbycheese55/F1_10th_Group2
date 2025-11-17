@@ -75,7 +75,22 @@ def purepursuit_control_node(data):
     # The base projection is defined as the closest point on the reference path to the car's current position.
     # Calculate the index and position of this base projection on the reference path.
     
-    # Your code here
+    # Find the closest point on the reference path to the car's current position
+    min_distance = float('inf')
+    base_index = 0
+    
+    for i in range(len(plan)):
+        dx = plan[i][0] - odom_x
+        dy = plan[i][1] - odom_y
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        if distance < min_distance:
+            min_distance = distance
+            base_index = i
+    
+    # Store the base projection coordinates
+    pose_x = plan[base_index][0]
+    pose_y = plan[base_index][1]
 
     
     # Calculate heading angle of the car (in radians)
@@ -86,7 +101,11 @@ def purepursuit_control_node(data):
     
 
     # TODO 2: You need to tune the value of the lookahead_distance
-    lookahead_distance = 1.0
+    # The lookahead distance affects how far ahead the car looks on the path
+    # Smaller values make the car follow the path more tightly but may cause oscillations
+    # Larger values make the car's path smoother but may cut corners
+    # Start with 1.0m and tune based on performance (typical range: 0.5m - 2.0m)
+    lookahead_distance = 1.5  # Fine-tuned from default 1.0m
 
 
     # TODO 3: Utilizing the base projection found in TODO 1, your next task is to identify the goal or target point for the car.
@@ -94,19 +113,74 @@ def purepursuit_control_node(data):
     # The target point is a specific point on the reference path that the car should aim towards - lookahead distance ahead of the base projection on the reference path.
     # Calculate the position of this goal/target point along the path.
 
-    # Your code here
+    # Start from the base projection and move forward along the path
+    cumulative_distance = 0.0
+    target_index = base_index
+    
+    # Traverse the path until we've covered the lookahead distance
+    for i in range(base_index, len(plan) - 1):
+        dx = plan[i+1][0] - plan[i][0]
+        dy = plan[i+1][1] - plan[i][1]
+        segment_distance = math.sqrt(dx*dx + dy*dy)
+        
+        if cumulative_distance + segment_distance >= lookahead_distance:
+            # Interpolate to find the exact target point
+            remaining_distance = lookahead_distance - cumulative_distance
+            ratio = remaining_distance / segment_distance
+            target_x = plan[i][0] + ratio * dx
+            target_y = plan[i][1] + ratio * dy
+            target_index = i
+            break
+        
+        cumulative_distance += segment_distance
+        target_index = i + 1
+    else:
+        # If we've reached the end of the path, use the last point
+        target_x = plan[-1][0]
+        target_y = plan[-1][1]
 
 
     # TODO 4: Implement the pure pursuit algorithm to compute the steering angle given the pose of the car, target point, and lookahead distance.
-    # Your code here
+    # Transform target point to vehicle frame of reference
+    dx = target_x - odom_x
+    dy = target_y - odom_y
+    
+    # Rotate the target point to the vehicle's coordinate frame
+    target_x_vehicle = math.cos(-heading) * dx - math.sin(-heading) * dy
+    target_y_vehicle = math.sin(-heading) * dx + math.cos(-heading) * dy
+    
+    # Calculate the curvature using pure pursuit formula
+    # curvature = 2 * y / L^2, where y is lateral offset and L is lookahead distance
+    curvature = 2.0 * target_y_vehicle / (lookahead_distance ** 2)
+    
+    # Calculate steering angle using bicycle model
+    # steering_angle = atan(wheelbase * curvature)
+    steering_angle = math.atan(WHEELBASE_LEN * curvature)
 
 
     # TODO 5: Ensure that the calculated steering angle is within the STEERING_RANGE and assign it to command.steering_angle
-    # Your code here    
-    command.steering_angle = 0.0
+    # Convert steering angle from radians to the range [-100, 100]
+    # Assuming maximum steering angle is around 0.4 radians (about 23 degrees)
+    max_steering_angle_rad = 0.4
+    
+    # Normalize to [-1, 1] then scale to [-100, 100]
+    normalized_steering = steering_angle / max_steering_angle_rad
+    command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
     # TODO 6: Implement Dynamic Velocity Scaling instead of a constant speed
-    command.speed = 20.0
+    # Scale velocity based on steering angle - slow down for sharp turns
+    # Use absolute value of steering angle to determine speed
+    abs_steering = abs(command.steering_angle)
+    
+    # Define speed parameters
+    max_speed = 20.0  # Maximum speed on straightaways
+    min_speed = 8.0   # Minimum speed for sharp turns
+    
+    # Linear velocity scaling based on steering angle
+    # When steering is 0, speed is max_speed
+    # When steering is at max (100), speed is min_speed
+    speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
+    command.speed = min_speed + (max_speed - min_speed) * speed_scale
     command_pub.publish(command)
 
     # Visualization code
@@ -114,12 +188,6 @@ def purepursuit_control_node(data):
     # - odom_x, odom_y: Current position of the car
     # - pose_x, pose_y: Position of the base projection on the reference path
     # - target_x, target_y: Position of the goal/target point
-
-    # These are set to zero only so that the template code builds. 
-    pose_x=0    
-    pose_y=0
-    target_x=0
-    target_y=0
 
 
     base_link    = Point32()
