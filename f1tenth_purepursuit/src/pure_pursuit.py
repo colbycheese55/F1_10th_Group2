@@ -33,7 +33,7 @@ control_polygon = PolygonStamped()
 def construct_path():
     # Function to construct the path from a CSV file
     # TODO: Modify this path to match the folder where the csv file containing the path is located.
-    file_path = os.path.expanduser('/home/maxwell/catkin_ws/src/f1tenth_purepursuit/path/{}.csv'.format(trajectory_name))
+    file_path = os.path.expanduser('/home/nvidia/{}.csv'.format(trajectory_name))
     with open(file_path) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter = ',')
         for waypoint in csv_reader:
