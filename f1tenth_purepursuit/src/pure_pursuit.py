@@ -56,6 +56,38 @@ STEERING_RANGE = 100.0
 # vehicle physical parameters
 WHEELBASE_LEN       = 0.325
 
+# -------- Adaptive lookahead parameters --------
+# Lookahead limits (meters)
+L_MIN    = 0.8   # min lookahead – tight corners / low speed
+L_MAX    = 2.5   # max lookahead – straights / high speed
+
+# Speed range where we interpolate (same units as command.speed)
+V_MIN_LD = 8.0   # <= this -> use L_MIN
+V_MAX_LD = 20.0  # >= this -> use L_MAX
+
+# last commanded speed (used as our speed estimate)
+current_speed_cmd = 0.0
+
+
+def compute_lookahead_distance():
+    """
+    Adaptive lookahead based on last commanded speed.
+    Below V_MIN_LD -> L_MIN
+    Above V_MAX_LD -> L_MAX
+    In between     -> linear interpolation.
+    """
+    v = current_speed_cmd
+
+    if v <= V_MIN_LD:
+        return L_MIN
+    if v >= V_MAX_LD:
+        return L_MAX
+
+    # Linear interpolation between L_MIN and L_MAX
+    ratio = (v - V_MIN_LD) / float(V_MAX_LD - V_MIN_LD)
+    return L_MIN + ratio * (L_MAX - L_MIN)
+
+
 def purepursuit_control_node(data):
     # Main control function for pure pursuit algorithm
 
@@ -64,6 +96,7 @@ def purepursuit_control_node(data):
 
     global wp_seq
     global curr_polygon
+    global current_speed_cmd
 
     # Obtain the current position of the race car from the inferred_pose message
     odom_x = data.pose.position.x
@@ -105,7 +138,7 @@ def purepursuit_control_node(data):
     # Smaller values make the car follow the path more tightly but may cause oscillations
     # Larger values make the car's path smoother but may cut corners
     # Start with 1.0m and tune based on performance (typical range: 0.5m - 2.0m)
-    lookahead_distance = 1.5  # Fine-tuned from default 1.0m
+    lookahead_distance = compute_lookahead_distance() # Fine-tuned from default 1.0m
 
 
     # TODO 3: Utilizing the base projection found in TODO 1, your next task is to identify the goal or target point for the car.
@@ -181,6 +214,7 @@ def purepursuit_control_node(data):
     # When steering is at max (100), speed is min_speed
     speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
     command.speed = min_speed + (max_speed - min_speed) * speed_scale
+    current_speed_cmd = command.speed
     command_pub.publish(command)
 
     # Visualization code
