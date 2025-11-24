@@ -251,7 +251,7 @@ if __name__ == '__main__':
 
         # This node subsribes to the pose estimate provided by the Particle Filter. 
         # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
-        rospy.Subscriber('/{}/particle_filter/viz/inferred_pose'.format(car_name), PoseStamped, purepursuit_control_node)
+        rospy.Subscriber('/car_2/particle_filter/viz/inferred_pose', PoseStamped, purepursuit_control_node)
         rospy.spin()
 
     except rospy.ROSInterruptException:
