@@ -58,12 +58,12 @@ WHEELBASE_LEN       = 0.325
 
 # -------- Adaptive lookahead parameters --------
 # Lookahead limits (meters)
-L_MIN    = 0.8   # min lookahead – tight corners / low speed
-L_MAX    = 2.5   # max lookahead – straights / high speed
+L_MIN    = 0.8
+L_MAX    = 2.5
 
 # Speed range where we interpolate (same units as command.speed)
-V_MIN_LD = 8.0   # <= this -> use L_MIN
-V_MAX_LD = 20.0  # >= this -> use L_MAX
+V_MIN_LD = 8.0
+V_MAX_LD = 20.0
 
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
@@ -206,8 +206,8 @@ def purepursuit_control_node(data):
     abs_steering = abs(command.steering_angle)
     
     # Define speed parameters
-    max_speed = 20.0  # Maximum speed on straightaways
-    min_speed = 8.0   # Minimum speed for sharp turns
+    max_speed = 65.0  # Maximum speed on straightaways
+    min_speed = 5.0   # Minimum speed for sharp turns
     
     # Linear velocity scaling based on steering angle
     # When steering is 0, speed is max_speed
