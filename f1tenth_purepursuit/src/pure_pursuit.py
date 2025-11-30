@@ -234,7 +234,7 @@ L_MAX    = 2
 
 # Speed range where we interpolate (same units as command.speed)
 V_MIN_LD = 8.0
-V_MAX_LD = 20.0
+V_MAX_LD = 15.0
 
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
