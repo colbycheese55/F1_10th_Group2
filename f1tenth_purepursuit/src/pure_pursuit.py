@@ -230,7 +230,7 @@ WHEELBASE_LEN       = 0.325
 # -------- Adaptive lookahead parameters --------
 # Lookahead limits (meters)
 L_MIN    = 0.8
-L_MAX    = 2.5
+L_MAX    = 2
 
 # Speed range where we interpolate (same units as command.speed)
 V_MIN_LD = 8.0
