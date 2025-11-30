@@ -1,1 +1,11 @@
+<launch>
+    <arg name="car_name" default="car_2"/>
+    <arg name="raceline" default="raceline"/>
 
+    <node pkg="f1tenth_purepursuit"
+          type="pure_pursuit.py"
+          name="pure_pursuit"
+          output="screen"
+          args="$(arg car_name) $(arg raceline)">
+    </node>
+</launch>
