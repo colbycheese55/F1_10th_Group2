@@ -10,6 +10,9 @@ from ackermann_msgs.msg import AckermannDrive
 from geometry_msgs.msg import PolygonStamped
 from geometry_msgs.msg import Point32
 from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
+from std_msgs.msg import ColorRGBA
 import tf
 
 # Global variables for storing the path, path resolution, frame ID, and car details
@@ -22,6 +25,13 @@ trajectory_name     = str(sys.argv[2])
 # Publishers for sending driving commands and visualizing the control polygon
 command_pub         = rospy.Publisher('/{}/offboard/command'.format(car_name), AckermannDrive, queue_size = 1)
 polygon_pub         = rospy.Publisher('/{}/purepursuit_control/visualize'.format(car_name), PolygonStamped, queue_size = 1)
+
+# Publishers for RViz visualization markers
+path_marker_pub     = rospy.Publisher('/{}/purepursuit_control/path_marker'.format(car_name), Marker, queue_size = 1)
+pose_marker_pub     = rospy.Publisher('/{}/purepursuit_control/pose_marker'.format(car_name), Marker, queue_size = 1)
+target_marker_pub   = rospy.Publisher('/{}/purepursuit_control/target_marker'.format(car_name), Marker, queue_size = 1)
+steering_marker_pub = rospy.Publisher('/{}/purepursuit_control/steering_marker'.format(car_name), Marker, queue_size = 1)
+lookahead_marker_pub = rospy.Publisher('/{}/purepursuit_control/lookahead_marker'.format(car_name), Marker, queue_size = 1)
 
 # Global variables for waypoint sequence and current polygon
 global wp_seq
@@ -48,6 +58,167 @@ def construct_path():
          dx = plan[index][0] - plan[index-1][0]
          dy = plan[index][1] - plan[index-1][1]
          path_resolution.append(math.sqrt(dx*dx + dy*dy))
+
+
+def publish_path_marker():
+    """Publish the reference path as a LINE_STRIP marker for RViz visualization."""
+    path_marker = Marker()
+    path_marker.header.frame_id = frame_id
+    path_marker.header.stamp = rospy.Time.now()
+    path_marker.ns = "reference_path"
+    path_marker.id = 0
+    path_marker.type = Marker.LINE_STRIP
+    path_marker.action = Marker.ADD
+    
+    # Set the scale (line width)
+    path_marker.scale.x = 0.05  # Line width
+    
+    # Set the color (green for reference path)
+    path_marker.color.r = 0.0
+    path_marker.color.g = 1.0
+    path_marker.color.b = 0.0
+    path_marker.color.a = 0.8
+    
+    # Add all waypoints to the marker
+    for waypoint in plan:
+        p = Point()
+        p.x = waypoint[0]
+        p.y = waypoint[1]
+        p.z = 0.0
+        path_marker.points.append(p)
+    
+    # Make the path a closed loop by connecting back to start
+    if len(plan) > 0:
+        p = Point()
+        p.x = plan[0][0]
+        p.y = plan[0][1]
+        p.z = 0.0
+        path_marker.points.append(p)
+    
+    path_marker.lifetime = rospy.Duration(0)  # Never expire
+    path_marker_pub.publish(path_marker)
+
+
+def publish_visualization_markers(odom_x, odom_y, heading, pose_x, pose_y, target_x, target_y, steering_angle, lookahead_distance):
+    """Publish visualization markers for pose, target, and steering angle."""
+    
+    # --- Pose Marker (base projection on path) - Blue Sphere ---
+    pose_marker = Marker()
+    pose_marker.header.frame_id = frame_id
+    pose_marker.header.stamp = rospy.Time.now()
+    pose_marker.ns = "base_projection"
+    pose_marker.id = 1
+    pose_marker.type = Marker.SPHERE
+    pose_marker.action = Marker.ADD
+    pose_marker.pose.position.x = pose_x
+    pose_marker.pose.position.y = pose_y
+    pose_marker.pose.position.z = 0.1
+    pose_marker.pose.orientation.w = 1.0
+    pose_marker.scale.x = 0.15
+    pose_marker.scale.y = 0.15
+    pose_marker.scale.z = 0.15
+    pose_marker.color.r = 0.0
+    pose_marker.color.g = 0.0
+    pose_marker.color.b = 1.0
+    pose_marker.color.a = 1.0
+    pose_marker.lifetime = rospy.Duration(0.1)
+    pose_marker_pub.publish(pose_marker)
+    
+    # --- Target Marker (lookahead point) - Red Sphere ---
+    target_marker = Marker()
+    target_marker.header.frame_id = frame_id
+    target_marker.header.stamp = rospy.Time.now()
+    target_marker.ns = "target_point"
+    target_marker.id = 2
+    target_marker.type = Marker.SPHERE
+    target_marker.action = Marker.ADD
+    target_marker.pose.position.x = target_x
+    target_marker.pose.position.y = target_y
+    target_marker.pose.position.z = 0.1
+    target_marker.pose.orientation.w = 1.0
+    target_marker.scale.x = 0.2
+    target_marker.scale.y = 0.2
+    target_marker.scale.z = 0.2
+    target_marker.color.r = 1.0
+    target_marker.color.g = 0.0
+    target_marker.color.b = 0.0
+    target_marker.color.a = 1.0
+    target_marker.lifetime = rospy.Duration(0.1)
+    target_marker_pub.publish(target_marker)
+    
+    # --- Lookahead Line (from car to target) - Yellow Line ---
+    lookahead_marker = Marker()
+    lookahead_marker.header.frame_id = frame_id
+    lookahead_marker.header.stamp = rospy.Time.now()
+    lookahead_marker.ns = "lookahead_line"
+    lookahead_marker.id = 3
+    lookahead_marker.type = Marker.LINE_STRIP
+    lookahead_marker.action = Marker.ADD
+    lookahead_marker.scale.x = 0.05  # Line width
+    lookahead_marker.color.r = 1.0
+    lookahead_marker.color.g = 1.0
+    lookahead_marker.color.b = 0.0
+    lookahead_marker.color.a = 0.8
+    
+    # Start point (car position)
+    p_start = Point()
+    p_start.x = odom_x
+    p_start.y = odom_y
+    p_start.z = 0.1
+    lookahead_marker.points.append(p_start)
+    
+    # End point (target)
+    p_end = Point()
+    p_end.x = target_x
+    p_end.y = target_y
+    p_end.z = 0.1
+    lookahead_marker.points.append(p_end)
+    
+    lookahead_marker.lifetime = rospy.Duration(0.1)
+    lookahead_marker_pub.publish(lookahead_marker)
+    
+    # --- Steering Angle Arrow - Magenta Arrow ---
+    steering_marker = Marker()
+    steering_marker.header.frame_id = frame_id
+    steering_marker.header.stamp = rospy.Time.now()
+    steering_marker.ns = "steering_angle"
+    steering_marker.id = 4
+    steering_marker.type = Marker.ARROW
+    steering_marker.action = Marker.ADD
+    
+    # Calculate the steering direction in world frame
+    # The steering angle is relative to the car's heading
+    steering_heading = heading + steering_angle
+    arrow_length = 0.5  # Arrow length in meters
+    
+    # Arrow start point (front of car)
+    p_arrow_start = Point()
+    p_arrow_start.x = odom_x + 0.2 * math.cos(heading)  # Slightly in front of car
+    p_arrow_start.y = odom_y + 0.2 * math.sin(heading)
+    p_arrow_start.z = 0.15
+    
+    # Arrow end point (in steering direction)
+    p_arrow_end = Point()
+    p_arrow_end.x = p_arrow_start.x + arrow_length * math.cos(steering_heading)
+    p_arrow_end.y = p_arrow_start.y + arrow_length * math.sin(steering_heading)
+    p_arrow_end.z = 0.15
+    
+    steering_marker.points.append(p_arrow_start)
+    steering_marker.points.append(p_arrow_end)
+    
+    # Arrow dimensions
+    steering_marker.scale.x = 0.05  # Shaft diameter
+    steering_marker.scale.y = 0.1   # Head diameter
+    steering_marker.scale.z = 0.1   # Head length
+    
+    # Magenta color
+    steering_marker.color.r = 1.0
+    steering_marker.color.g = 0.0
+    steering_marker.color.b = 1.0
+    steering_marker.color.a = 1.0
+    
+    steering_marker.lifetime = rospy.Duration(0.1)
+    steering_marker_pub.publish(steering_marker)
 
 
 # Steering Range from -100.0 to 100.0
@@ -217,6 +388,9 @@ def purepursuit_control_node(data):
     current_speed_cmd = command.speed
     command_pub.publish(command)
 
+    # Publish RViz visualization markers for reference path, pose, target, and steering angle
+    publish_visualization_markers(odom_x, odom_y, heading, pose_x, pose_y, target_x, target_y, steering_angle, lookahead_distance)
+
     # Visualization code
     # Make sure the following variables are properly defined in your TODOs above:
     # - odom_x, odom_y: Current position of the car
@@ -248,6 +422,10 @@ if __name__ == '__main__':
         if not plan:
             rospy.loginfo('obtaining trajectory')
             construct_path()
+            # Publish the reference path marker once after loading
+            rospy.sleep(0.5)  # Wait for publishers to be ready
+            publish_path_marker()
+            rospy.loginfo('Published reference path to RViz')
 
         # This node subsribes to the pose estimate provided by the Particle Filter. 
         # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
