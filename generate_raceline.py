@@ -77,33 +77,60 @@ class RacelineGenerator:
         """Extract the drivable track area from the map."""
         print("Extracting track boundaries...")
         
-        # In occupancy grids: 255=free, 0=occupied, 205=unknown
-        # Create binary mask: free space = 1, obstacles/unknown = 0
-        free_threshold = 250
+        # In occupancy grids: 255=free space (white), anything else is obstacle/wall
+        # Only pixels very close to white (254-255) are considered free space
+        free_threshold = 254
         self.track_mask = (self.map_image >= free_threshold).astype(np.uint8)
         
-        # Apply morphological operations to clean up the mask
-        kernel = np.ones((3, 3), np.uint8)
-        self.track_mask = cv2.morphologyEx(self.track_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-        self.track_mask = cv2.morphologyEx(self.track_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        print(f"Initial free space: {np.sum(self.track_mask)} pixels")
         
-        # Erode slightly to create safety margin from walls
-        safety_margin_pixels = int(0.15 / self.resolution)  # 15cm safety margin
+        # Find the largest connected component (the main track area)
+        # This removes small isolated white pixels that aren't part of the track
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(self.track_mask, connectivity=8)
+        
+        if num_labels <= 1:
+            raise ValueError("No track found in the map")
+        
+        # Find the largest component (excluding background label 0)
+        largest_component = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+        self.track_mask = (labels == largest_component).astype(np.uint8)
+        
+        print(f"Largest track component: {np.sum(self.track_mask)} pixels")
+        
+        # Apply light morphological closing to fill small holes
+        kernel = np.ones((3, 3), np.uint8)
+        self.track_mask = cv2.morphologyEx(self.track_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        
+        # Erode to create safety margin from walls
+        safety_margin_pixels = int(0.20 / self.resolution)  # 20cm safety margin
         kernel_erode = np.ones((safety_margin_pixels, safety_margin_pixels), np.uint8)
         self.track_mask = cv2.erode(self.track_mask, kernel_erode, iterations=1)
         
-        print(f"Track area: {np.sum(self.track_mask)} pixels")
+        print(f"Track area after safety margin: {np.sum(self.track_mask)} pixels")
         
     def compute_centerline(self):
-        """Compute the centerline/skeleton of the track using medial axis transform."""
+        """Compute the centerline/skeleton of the track using distance transform thresholding."""
         print("Computing track centerline...")
         
-        # Use medial axis transform to find the centerline
-        # This gives us points equidistant from track boundaries
-        skeleton, distance_map = medial_axis(self.track_mask, return_distance=True)
+        # Calculate Euclidean Distance Transform
+        # This tells us the distance from each free pixel to the nearest wall
+        from scipy.ndimage import distance_transform_edt
+        dist_transform = distance_transform_edt(self.track_mask)
         
-        # Thin the skeleton further
-        skeleton = skeletonize(skeleton)
+        print(f"Distance transform max: {dist_transform.max():.2f} pixels")
+        
+        # Threshold the distance transform to keep only points far from walls
+        # This naturally creates a clean centerline without branches
+        # Threshold: keep points that are at least X% of the maximum distance from walls
+        THRESHOLD = 0.45  # 35% of max distance - adjust if needed
+        centers = dist_transform > THRESHOLD * dist_transform.max()
+        
+        print(f"Points after distance threshold: {np.sum(centers)}")
+        
+        # Apply skeletonization to thin the thresholded region to a 1-pixel line
+        skeleton = skeletonize(centers)
+        
+        print(f"Skeleton points after thinning: {np.sum(skeleton)}")
         
         # Extract skeleton points
         skeleton_points = np.argwhere(skeleton)
@@ -111,7 +138,7 @@ class RacelineGenerator:
         if len(skeleton_points) == 0:
             raise ValueError("No centerline found. Check if the track mask is valid.")
         
-        print(f"Found {len(skeleton_points)} centerline points")
+        print(f"Found {len(skeleton_points)} centerline points for raceline")
         
         # Convert from image coordinates (row, col) to world coordinates (x, y)
         # Row = y-axis (flipped), Col = x-axis
@@ -125,46 +152,118 @@ class RacelineGenerator:
         self.centerline = np.array(centerline_world)
         
         # Store distance map for later optimization
-        self.distance_map = distance_map
+        self.distance_map = dist_transform
         self.skeleton = skeleton
+    
+    def remove_branches(self, skeleton):
+        """Remove branch points from skeleton to get a single continuous loop."""
+        # Create a copy to work with
+        skel = skeleton.copy().astype(np.uint8)
+        
+        # Define 8-connectivity kernel (don't count center pixel)
+        kernel = np.array([[1, 1, 1],
+                          [1, 0, 1],
+                          [1, 1, 1]], dtype=np.uint8)
+        
+        # Iteratively remove branch points (points with more than 2 neighbors)
+        for iteration in range(15):
+            # Count neighbors for each point (8-connectivity, excluding center)
+            neighbor_count = cv2.filter2D(skel, -1, kernel)
+            
+            # Branch points have more than 2 neighbors
+            # Normal path points have exactly 2 neighbors (like beads on a string)
+            # Endpoints have exactly 1 neighbor
+            branch_points = (neighbor_count > 2) & (skel > 0)
+            
+            num_branches = np.sum(branch_points)
+            if num_branches == 0:
+                print(f"Branch removal complete after {iteration} iterations")
+                break
+            
+            # Remove branch points
+            skel[branch_points] = 0
+        
+        # Remove endpoints (dead ends) iteratively to clean up dangling segments
+        for iteration in range(15):
+            neighbor_count = cv2.filter2D(skel, -1, kernel)
+            
+            # Endpoints have exactly 1 neighbor
+            endpoints = (neighbor_count == 1) & (skel > 0)
+            
+            num_endpoints = np.sum(endpoints)
+            if num_endpoints == 0:
+                print(f"Endpoint removal complete after {iteration} iterations")
+                break
+                
+            skel[endpoints] = 0
+        
+        return skel
         
     def order_centerline_points(self):
-        """Order centerline points to form a continuous path."""
+        """Order centerline points using greedy nearest-neighbor to follow a single path."""
         print("Ordering centerline points...")
         
         if len(self.centerline) == 0:
             return
         
-        # Use nearest neighbor approach to order points
-        ordered_points = [self.centerline[0]]
-        remaining_points = list(self.centerline[1:])
+        # Start from the leftmost point
+        start_idx = np.argmin(self.centerline[:, 0])
         
-        while remaining_points:
-            last_point = ordered_points[-1]
-            # Find nearest remaining point
-            distances = [np.linalg.norm(last_point - p) for p in remaining_points]
-            nearest_idx = np.argmin(distances)
-            ordered_points.append(remaining_points[nearest_idx])
-            remaining_points.pop(nearest_idx)
+        # Greedy nearest-neighbor traversal
+        visited = np.zeros(len(self.centerline), dtype=bool)
+        ordered_points = []
+        
+        current_idx = start_idx
+        max_step = 0.2  # Maximum distance to next point (meters)
+        
+        while not visited[current_idx]:
+            visited[current_idx] = True
+            ordered_points.append(self.centerline[current_idx])
+            
+            # Find nearest unvisited neighbor
+            min_dist = float('inf')
+            next_idx = None
+            
+            for i in range(len(self.centerline)):
+                if not visited[i]:
+                    dist = np.linalg.norm(self.centerline[current_idx] - self.centerline[i])
+                    if dist < min_dist and dist <= max_step:
+                        min_dist = dist
+                        next_idx = i
+            
+            # If no valid next point, we're done
+            if next_idx is None:
+                break
+            
+            current_idx = next_idx
         
         self.centerline = np.array(ordered_points)
+        print(f"Ordered path has {len(self.centerline)} points")
         
-        # Check if it's a closed loop (distance from end to start is small)
-        loop_distance = np.linalg.norm(self.centerline[-1] - self.centerline[0])
-        if loop_distance < 0.5:  # Within 0.5 meters
-            print("Detected closed loop track")
-            # Add first point at the end to close the loop
-            self.centerline = np.vstack([self.centerline, self.centerline[0]])
+        # Check if it's a closed loop
+        if len(self.centerline) > 10:
+            loop_distance = np.linalg.norm(self.centerline[-1] - self.centerline[0])
+            print(f"Loop closure distance: {loop_distance:.2f}m")
+            
+            if loop_distance < 0.5:
+                print("Detected closed loop track (already complete)")
+            elif loop_distance < 1.0:
+                print("Detected closed loop track - adding closure point")
+                self.centerline = np.vstack([self.centerline, self.centerline[0]])
         
     def optimize_raceline(self):
-        """Optimize the racing line using smoothing and curvature minimization."""
+        """Optimize the racing line by removing outliers and smoothing."""
         print("Optimizing racing line...")
         
-        # Start with centerline
-        raceline = self.centerline.copy()
+        if len(self.centerline) < 10:
+            self.raceline = self.centerline
+            return
         
-        # Apply smoothing using moving average
-        window_size = 5
+        # Remove outliers based on local curvature
+        raceline = self.remove_outliers(self.centerline.copy())
+        
+        # Apply light smoothing using moving average
+        window_size = 3
         raceline_smooth = np.copy(raceline)
         for i in range(len(raceline)):
             if i < window_size // 2 or i >= len(raceline) - window_size // 2:
@@ -174,43 +273,63 @@ class RacelineGenerator:
             raceline_smooth[i] = np.mean(raceline[start_idx:end_idx], axis=0)
         
         self.raceline = raceline_smooth
+        print(f"Optimized raceline has {len(self.raceline)} points")
+    
+    def remove_outliers(self, points):
+        """Remove outlier points that create sharp angles."""
+        if len(points) < 3:
+            return points
+        
+        clean_points = [points[0]]
+        
+        for i in range(1, len(points) - 1):
+            # Calculate angle at this point
+            v1 = points[i] - points[i-1]
+            v2 = points[i+1] - points[i]
+            
+            # Skip if vectors are too short
+            if np.linalg.norm(v1) < 0.01 or np.linalg.norm(v2) < 0.01:
+                continue
+            
+            # Calculate angle between vectors
+            cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+            cos_angle = np.clip(cos_angle, -1.0, 1.0)
+            angle = np.arccos(cos_angle)
+            
+            # Only keep points where angle is reasonable (not too sharp)
+            # Threshold: 45 degrees (pi/4 radians)
+            if angle < 2.5:  # Less than ~143 degrees is OK
+                clean_points.append(points[i])
+        
+        clean_points.append(points[-1])
+        
+        removed = len(points) - len(clean_points)
+        if removed > 0:
+            print(f"Removed {removed} outlier points")
+        
+        return np.array(clean_points)
         
     def smooth_with_spline(self, num_points=200):
-        """Apply spline smoothing to create a smooth raceline."""
-        print(f"Applying spline smoothing with {num_points} points...")
+        """Downsample to evenly spaced waypoints."""
+        print(f"Downsampling to {num_points} waypoints...")
         
         if len(self.raceline) < 4:
-            print("Warning: Not enough points for spline fitting")
+            print("Warning: Not enough points")
             self.waypoints = self.raceline
             return
         
-        # Prepare data for spline fitting
-        x = self.raceline[:, 0]
-        y = self.raceline[:, 1]
+        # Simple downsampling: take every Nth point
+        step = max(1, len(self.raceline) // num_points)
+        self.waypoints = self.raceline[::step]
         
-        # Check if it's a closed loop
+        # Ensure we have the last point if it's a closed loop
         is_closed = np.linalg.norm(self.raceline[-1] - self.raceline[0]) < 0.5
+        if is_closed and len(self.waypoints) > 0:
+            # Make sure last point connects back to first
+            if np.linalg.norm(self.waypoints[-1] - self.waypoints[0]) > 0.3:
+                self.waypoints = np.vstack([self.waypoints, self.waypoints[0]])
         
-        # Fit spline
-        # Use periodic spline for closed tracks
-        try:
-            if is_closed:
-                # For closed tracks, use periodic boundary conditions
-                tck, u = splprep([x, y], s=0.1, per=True, k=3)
-            else:
-                tck, u = splprep([x, y], s=0.1, k=3)
-            
-            # Evaluate spline at evenly spaced points
-            u_new = np.linspace(0, 1, num_points)
-            x_new, y_new = splev(u_new, tck)
-            
-            self.waypoints = np.column_stack([x_new, y_new])
-            print(f"Generated {len(self.waypoints)} smooth waypoints")
-            
-        except Exception as e:
-            print(f"Warning: Spline fitting failed: {e}")
-            print("Using original raceline points")
-            self.waypoints = self.raceline
+        print(f"Generated {len(self.waypoints)} waypoints")
     
     def save_waypoints(self):
         """Save waypoints to CSV file in the format: x, y, z, w"""
