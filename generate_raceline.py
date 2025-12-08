@@ -102,7 +102,7 @@ class RacelineGenerator:
         self.track_mask = cv2.morphologyEx(self.track_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
         
         # Erode to create safety margin from walls
-        safety_margin_pixels = int(0.20 / self.resolution)  # 20cm safety margin
+        safety_margin_pixels = int(0.15 / self.resolution)  # 15cm safety margin (balanced for safety and tight turns)
         kernel_erode = np.ones((safety_margin_pixels, safety_margin_pixels), np.uint8)
         self.track_mask = cv2.erode(self.track_mask, kernel_erode, iterations=1)
         
@@ -122,7 +122,8 @@ class RacelineGenerator:
         # Threshold the distance transform to keep only points far from walls
         # This naturally creates a clean centerline without branches
         # Threshold: keep points that are at least X% of the maximum distance from walls
-        THRESHOLD = 0.45  # 35% of max distance - adjust if needed
+        # Lower threshold = tighter turns, closer to inside of corners
+        THRESHOLD = 0.30  # 35% of max distance - balanced for tight turns with continuity
         centers = dist_transform > THRESHOLD * dist_transform.max()
         
         print(f"Points after distance threshold: {np.sum(centers)}")
@@ -252,17 +253,71 @@ class RacelineGenerator:
                 self.centerline = np.vstack([self.centerline, self.centerline[0]])
         
     def optimize_raceline(self):
-        """Optimize the racing line by removing outliers and smoothing."""
+        """
+        Optimize the racing line by cutting corners and minimizing curvature.
+        Based on the principle: minimize integral of sqrt(k) ds where k is curvature.
+        """
         print("Optimizing racing line...")
         
         if len(self.centerline) < 10:
             self.raceline = self.centerline
             return
         
-        # Remove outliers based on local curvature
-        raceline = self.remove_outliers(self.centerline.copy())
+        # Start with centerline
+        raceline = self.centerline.copy()
         
-        # Apply light smoothing using moving average
+        # Iteratively optimize: shift points toward inside of corners
+        num_iterations = 50
+        learning_rate = 0.3  # How aggressively to optimize
+        
+        for iteration in range(num_iterations):
+            new_raceline = raceline.copy()
+            
+            for i in range(1, len(raceline) - 1):
+                # Calculate local curvature using three consecutive points
+                p_prev = raceline[i - 1]
+                p_curr = raceline[i]
+                p_next = raceline[i + 1]
+                
+                # Vectors
+                v1 = p_curr - p_prev
+                v2 = p_next - p_curr
+                
+                # Skip if vectors are too short
+                len_v1 = np.linalg.norm(v1)
+                len_v2 = np.linalg.norm(v2)
+                if len_v1 < 0.01 or len_v2 < 0.01:
+                    continue
+                
+                # Calculate signed curvature (cross product in 2D)
+                cross = v1[0] * v2[1] - v1[1] * v2[0]
+                curvature = 2 * cross / (len_v1 * len_v2 * (len_v1 + len_v2))
+                
+                # Normal vector pointing to inside of turn (left for positive curvature)
+                if abs(curvature) > 0.001:  # Only optimize at turns
+                    # Perpendicular to average direction
+                    avg_direction = (v1 / len_v1 + v2 / len_v2)
+                    avg_len = np.linalg.norm(avg_direction)
+                    if avg_len > 0.01:
+                        avg_direction = avg_direction / avg_len
+                        
+                        # Normal pointing inward (left turn = counterclockwise)
+                        if curvature > 0:
+                            normal = np.array([-avg_direction[1], avg_direction[0]])
+                        else:
+                            normal = np.array([avg_direction[1], -avg_direction[0]])
+                        
+                        # Shift toward inside of turn to cut corner tighter
+                        # Shift amount proportional to curvature magnitude
+                        shift = learning_rate * abs(curvature) * 2.0 * normal
+                        new_raceline[i] = p_curr + shift
+            
+            raceline = new_raceline
+        
+        # Remove outliers and smooth
+        raceline = self.remove_outliers(raceline)
+        
+        # Light smoothing
         window_size = 3
         raceline_smooth = np.copy(raceline)
         for i in range(len(raceline)):
@@ -297,8 +352,8 @@ class RacelineGenerator:
             angle = np.arccos(cos_angle)
             
             # Only keep points where angle is reasonable (not too sharp)
-            # Threshold: 45 degrees (pi/4 radians)
-            if angle < 2.5:  # Less than ~143 degrees is OK
+            # Allow sharper angles for hairpin turns
+            if angle < 2.8:  # Less than ~160 degrees is OK (allows sharper turns)
                 clean_points.append(points[i])
         
         clean_points.append(points[-1])
