@@ -47,12 +47,17 @@ def construct_path():
     with open(file_path) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter = ',')
         for waypoint in csv_reader:
-            plan.append(waypoint)
+            if len(waypoint) >= 2:  # Ensure we have at least x, y coordinates
+                plan.append(waypoint)
 
     # Convert string coordinates to floats and calculate path resolution
+    # New format: x, y, velocity (velocity is optional for backwards compatibility)
     for index in range(0, len(plan)):
         for point in range(0, len(plan[index])):
             plan[index][point] = float(plan[index][point])
+        # If velocity is not provided, append a default value of 0.0
+        if len(plan[index]) < 3:
+            plan[index].append(0.0)
 
     for index in range(1, len(plan)):
          dx = plan[index][0] - plan[index-1][0]
@@ -371,20 +376,26 @@ def purepursuit_control_node(data):
     normalized_steering = steering_angle / max_steering_angle_rad
     command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
-    # TODO 6: Implement Dynamic Velocity Scaling instead of a constant speed
-    # Scale velocity based on steering angle - slow down for sharp turns
-    # Use absolute value of steering angle to determine speed
-    abs_steering = abs(command.steering_angle)
+    # TODO 6: Use velocity from waypoint CSV file
+    # If the waypoint has a velocity value (index 2), use it
+    # Otherwise fall back to dynamic velocity scaling based on steering angle
     
-    # Define speed parameters
-    max_speed = 65.0  # Maximum speed on straightaways
-    min_speed = 5.0   # Minimum speed for sharp turns
+    # Find the closest waypoint for velocity reference (same as base_index)
+    waypoint_velocity = plan[base_index][2] if len(plan[base_index]) > 2 else 0.0
     
-    # Linear velocity scaling based on steering angle
-    # When steering is 0, speed is max_speed
-    # When steering is at max (100), speed is min_speed
-    speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
-    command.speed = min_speed + (max_speed - min_speed) * speed_scale
+    if waypoint_velocity > 0.0:
+        # Use the velocity from the waypoint (assume it's in m/s or similar units)
+        # Apply a scaling factor if needed to match the robot's command range
+        velocity_percentage = 0.6  # Tunable parameter to scale waypoint velocities
+        command.speed = waypoint_velocity * velocity_percentage
+    else:
+        # Fall back to dynamic velocity scaling based on steering angle
+        abs_steering = abs(command.steering_angle)
+        max_speed = 65.0  # Maximum speed on straightaways
+        min_speed = 5.0   # Minimum speed for sharp turns
+        speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
+        command.speed = min_speed + (max_speed - min_speed) * speed_scale
+    
     current_speed_cmd = command.speed
     command_pub.publish(command)
 
