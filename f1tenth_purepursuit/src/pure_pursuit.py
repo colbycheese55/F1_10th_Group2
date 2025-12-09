@@ -6,6 +6,7 @@ import os
 import sys
 import csv
 import math
+import numpy as np
 from ackermann_msgs.msg import AckermannDrive
 from geometry_msgs.msg import PolygonStamped
 from geometry_msgs.msg import Point32
@@ -13,6 +14,7 @@ from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
+from sensor_msgs.msg import LaserScan
 import tf
 
 # Global variables for storing the path, path resolution, frame ID, and car details
@@ -21,6 +23,16 @@ path_resolution     = []
 frame_id            = 'map'
 car_name            = str(sys.argv[1])
 trajectory_name     = str(sys.argv[2])
+
+# LiDAR obstacle detection parameters (for detecting 32cm wide car)
+CAR_WIDTH           = 0.32  # meters (32 cm)
+SAFETY_MARGIN       = 0.05  # meters
+DISPARITY_THRESHOLD = 0.20  # meters (threshold for detecting obstacles)
+MIN_RANGE_OBSTACLE  = 0.18  # minimum range to consider as blocked
+OBSTACLE_DISTANCE   = 2.0   # distance forward to check for obstacles (meters)
+
+# Global variable for latest LiDAR scan
+latest_scan         = None
 
 # Publishers for sending driving commands and visualizing the control polygon
 command_pub         = rospy.Publisher('/{}/offboard/command'.format(car_name), AckermannDrive, queue_size = 1)
@@ -258,6 +270,118 @@ def compute_lookahead_distance():
     ratio = (v - V_MIN_LD) / float(V_MAX_LD - V_MIN_LD)
     return L_MIN + ratio * (L_MAX - L_MIN)
 
+def check_for_obstacle():
+    """
+    Detect obstacles all around the car (except the back) within a certain distance.
+    Robust to LiDAR noise - allows some gaps in obstacle regions.
+    Only returns obstacles that match the car width (within tolerance).
+    
+    Returns:
+        List of center angles (in degrees) where obstacles matching car width are detected.
+        Car frame: 0° = right, 90° = front, 180° = left, 270° = back (excluded).
+    """
+    global latest_scan
+    
+    if latest_scan is None:
+        return []
+    
+    try:
+        ranges = np.array(latest_scan.ranges, dtype=np.float32)
+        
+        # Handle invalid ranges
+        ranges = np.where(np.isfinite(ranges), ranges, 10.0)
+        ranges = np.where(ranges < MIN_RANGE_OBSTACLE, MIN_RANGE_OBSTACLE, ranges)
+        
+        angle_min = latest_scan.angle_min
+        angle_increment = latest_scan.angle_increment
+        
+        num_rays = len(ranges)
+        obstacle_centers = []  # List of center angles
+        
+        # Calculate expected angular width of car at different distances
+        # Width = 2 * atan(CAR_WIDTH/2 / distance)
+        # For typical obstacle distance, this gives us expected width in degrees
+        
+        # Use average expected distance for car width calculation
+        avg_obstacle_dist = OBSTACLE_DISTANCE / 2.0
+        expected_width_rad = 2.0 * math.atan((CAR_WIDTH / 2.0) / avg_obstacle_dist)
+        expected_width_deg = math.degrees(expected_width_rad)
+        width_tolerance = expected_width_deg * 0.5  # +/- 50% tolerance
+        
+        rospy.loginfo("Expected car width: {:.1f}° ± {:.1f}°".format(expected_width_deg, width_tolerance))
+        
+        # Find continuous regions where distance < OBSTACLE_DISTANCE
+        in_obstacle = False
+        obstacle_start_idx = 0
+        gap_count = 0
+        max_gap_allowed = 3  # Allow up to 3 consecutive invalid points
+        
+        for i in range(num_rays):
+            is_obstacle_ray = ranges[i] < OBSTACLE_DISTANCE
+            
+            # Exclude back of car (225° to 315°)
+            lidar_angle_rad = angle_min + (i * angle_increment)
+            lidar_angle_deg = math.degrees(lidar_angle_rad) % 360
+            is_back = 225 <= lidar_angle_deg < 315
+            
+            if is_obstacle_ray and not is_back:
+                gap_count = 0
+                if not in_obstacle:
+                    in_obstacle = True
+                    obstacle_start_idx = i
+            else:
+                if in_obstacle:
+                    gap_count += 1
+                    # If gap is too large, end the obstacle
+                    if gap_count > max_gap_allowed:
+                        in_obstacle = False
+                        obstacle_end_idx = i - gap_count
+                        
+                        # Calculate obstacle properties
+                        center_idx = (obstacle_start_idx + obstacle_end_idx) / 2.0
+                        
+                        # Center angle
+                        center_angle_rad = angle_min + (center_idx * angle_increment)
+                        center_angle = math.degrees(center_angle_rad) % 360
+                        
+                        # Angular width
+                        start_angle_rad = angle_min + (obstacle_start_idx * angle_increment)
+                        end_angle_rad = angle_min + (obstacle_end_idx * angle_increment)
+                        width = math.degrees(abs(end_angle_rad - start_angle_rad))
+                        
+                        # Check if width matches car width within tolerance
+                        if abs(width - expected_width_deg) <= width_tolerance:
+                            obstacle_centers.append(center_angle)
+                            rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
+        
+        # Handle case where obstacle extends to the end of the scan
+        if in_obstacle:
+            obstacle_end_idx = num_rays - 1
+            center_idx = (obstacle_start_idx + obstacle_end_idx) / 2.0
+            
+            center_angle_rad = angle_min + (center_idx * angle_increment)
+            center_angle = math.degrees(center_angle_rad) % 360
+            
+            start_angle_rad = angle_min + (obstacle_start_idx * angle_increment)
+            end_angle_rad = angle_min + (obstacle_end_idx * angle_increment)
+            width = math.degrees(abs(end_angle_rad - start_angle_rad))
+            
+            if abs(width - expected_width_deg) <= width_tolerance:
+                obstacle_centers.append(center_angle)
+                rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
+        
+        return obstacle_centers
+        
+    except Exception as e:
+        rospy.logerr("Error in check_for_obstacle: {}".format(str(e)))
+        return []
+
+
+def lidar_callback(data):
+    """Callback to store the latest LiDAR scan."""
+    global latest_scan
+    latest_scan = data
+
 
 def purepursuit_control_node(data):
     # Main control function for pure pursuit algorithm
@@ -426,6 +550,9 @@ if __name__ == '__main__':
             rospy.sleep(0.5)  # Wait for publishers to be ready
             publish_path_marker()
             rospy.loginfo('Published reference path to RViz')
+
+        # Subscribe to LiDAR for obstacle detection
+        rospy.Subscriber('/{}/scan'.format(car_name), LaserScan, lidar_callback)
 
         # This node subsribes to the pose estimate provided by the Particle Filter. 
         # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
