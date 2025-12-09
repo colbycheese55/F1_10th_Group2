@@ -385,9 +385,10 @@ def purepursuit_control_node(data):
     
     if waypoint_velocity > 0.0:
         # Use the velocity from the waypoint (assume it's in m/s or similar units)
-        # Apply a scaling factor if needed to match the robot's command range
-        velocity_percentage = 0.6  # Tunable parameter to scale waypoint velocities
-        command.speed = waypoint_velocity * velocity_percentage
+        # Scale from m/s to the car's 0-100 speed range
+        # Assuming waypoint velocities are in m/s, multiply by a scale factor
+        velocity_scale_factor = 10.0  # Tunable: converts m/s to 0-100 range (e.g., 5 m/s -> 50)
+        command.speed = min(100.0, waypoint_velocity * velocity_scale_factor)
     else:
         # Fall back to dynamic velocity scaling based on steering angle
         abs_steering = abs(command.steering_angle)
