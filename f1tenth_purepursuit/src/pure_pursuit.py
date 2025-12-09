@@ -6,7 +6,6 @@ import os
 import sys
 import csv
 import math
-import numpy as np
 from ackermann_msgs.msg import AckermannDrive
 from geometry_msgs.msg import PolygonStamped
 from geometry_msgs.msg import Point32
@@ -14,28 +13,14 @@ from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
-from sensor_msgs.msg import LaserScan
 import tf
 
 # Global variables for storing the path, path resolution, frame ID, and car details
-plans               = [] # list of plans (list)
-plan                = [] # current plan, chosen from `plans`
-current_plan_idx    = -1 # placeholder
-# path_resolution     = []
+plan                = []
+path_resolution     = []
 frame_id            = 'map'
 car_name            = str(sys.argv[1])
-trajectory_names    = [str(sys.argv[2]), str(sys.argv[3]), str(sys.argv[4])] # raceline order: interior, center, exterior 
-
-# LiDAR obstacle detection parameters (for detecting 32cm wide car)
-CAR_WIDTH           = 0.32  # meters (32 cm)
-SAFETY_MARGIN       = 0.05  # meters
-DISPARITY_THRESHOLD = 0.20  # meters (threshold for detecting obstacles)
-MIN_RANGE_OBSTACLE  = 0.18  # minimum range to consider as blocked
-OBSTACLE_DISTANCE   = 2.0   # distance forward to check for obstacles (meters)
-LIDAR_SMOOTH_WINDOW  = 5     # window size for LiDAR smoothing (set to 1 to disable)
-
-# Global variable for latest LiDAR scan
-latest_scan         = None
+trajectory_name     = str(sys.argv[2])
 
 # Publishers for sending driving commands and visualizing the control polygon
 command_pub         = rospy.Publisher('/{}/offboard/command'.format(car_name), AckermannDrive, queue_size = 1)
@@ -55,48 +40,25 @@ global curr_polygon
 wp_seq          = 0
 control_polygon = PolygonStamped()
 
-def construct_path(trajectory_name: str):
-    plan = list()
+def construct_path():
     # Function to construct the path from a CSV file
-    # CSV format: x, y, velocity
+    # TODO: Modify this path to match the folder where the csv file containing the path is located.
     file_path = os.path.expanduser('/home/nvidia/{}.csv'.format(trajectory_name))
     with open(file_path) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter = ',')
         for waypoint in csv_reader:
-            if len(waypoint) >= 3:  # Ensure we have at least x, y, velocity
-                plan.append(waypoint)
+            plan.append(waypoint)
 
-    # Convert string coordinates to floats
+    # Convert string coordinates to floats and calculate path resolution
     for index in range(0, len(plan)):
         for point in range(0, len(plan[index])):
             plan[index][point] = float(plan[index][point])
 
-    rospy.loginfo('Loaded {} waypoints from {}'.format(len(plan), trajectory_name))
-    return plan
+    for index in range(1, len(plan)):
+         dx = plan[index][0] - plan[index-1][0]
+         dy = plan[index][1] - plan[index-1][1]
+         path_resolution.append(math.sqrt(dx*dx + dy*dy))
 
-def consider_switching_plans(obstacles: list) -> None:
-    global plan
-    global current_plan_idx
-
-    FRONT_ANGLE_MIN, FRONT_ANGLE_MAX = 70, 110 # an obstacle must be in this range to considered in front of the car
-    LEFT_ANGLE_MAX, RIGHT_ANGLE_MIN = 210, -30
-
-    # if on the optimal plan and there are obstacles, switch lanes, prefer interior lane
-    if current_plan_idx == 1 and any(x > FRONT_ANGLE_MIN and x < FRONT_ANGLE_MAX for x in obstacles):
-        if not any(x < LEFT_ANGLE_MAX and x > FRONT_ANGLE_MAX for x in obstacles):
-            plan = plans[0]
-            current_plan_idx = 0
-        else:
-            plan = plans[2]
-            current_plan_idx = 2
-    # if on the interior plan and there are no obstacles on to the right, switch lanes
-    elif current_plan_idx == 0 and not any(x > RIGHT_ANGLE_MIN and x < FRONT_ANGLE_MIN for x in obstacles):
-        plan = plans[1]
-        current_plan_idx = 1
-    # if on the exterior plan and there are no obstacles on to the left, switch lanes
-    elif current_plan_idx == 2 and not any(x < LEFT_ANGLE_MAX and x > FRONT_ANGLE_MAX for x in obstacles):
-        plan = plans[1]
-        current_plan_idx = 1
 
 def publish_path_marker():
     """Publish the reference path as a LINE_STRIP marker for RViz visualization."""
@@ -274,9 +236,6 @@ L_MAX    = 2
 V_MIN_LD = 8.0
 V_MAX_LD = 15.0
 
-# Velocity percentage multiplier for waypoint velocities
-VELOCITY_PERCENTAGE = 0.6
-
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
 
@@ -298,145 +257,6 @@ def compute_lookahead_distance():
     # Linear interpolation between L_MIN and L_MAX
     ratio = (v - V_MIN_LD) / float(V_MAX_LD - V_MIN_LD)
     return L_MIN + ratio * (L_MAX - L_MIN)
-
-def smooth_lidar(self, ranges, window_size):
-        """
-        Apply a moving average filter to smooth lidar data.
-        Uses numpy convolution for efficiency.
-        
-        Args:
-            ranges: numpy array of lidar ranges
-            window_size: size of the smoothing window (odd number recommended)
-        
-        Returns:
-            Smoothed numpy array of the same size
-        """
-        if window_size <= 1:
-            return ranges
-        
-        # Create a normalized averaging kernel
-        kernel = np.ones(window_size) / window_size
-        
-        # Apply convolution with 'same' mode to maintain array size
-        # Use 'same' mode to keep the same length as input
-        smoothed = np.convolve(ranges, kernel, mode='same')
-        
-        return smoothed
-
-def check_for_obstacle():
-    """
-    Detect obstacles all around the car (except the back) within a certain distance.
-    Robust to LiDAR noise - allows some gaps in obstacle regions.
-    Only returns obstacles that match the car width (within tolerance).
-    
-    Returns:
-        List of center angles (in degrees) where obstacles matching car width are detected.
-        Car frame: 0° = right, 90° = front, 180° = left, 270° = back (excluded).
-    """
-    global latest_scan
-    
-    if latest_scan is None:
-        return []
-    
-    try:
-        ranges = np.array(latest_scan.ranges, dtype=np.float32)
-        
-        # Handle invalid ranges
-        ranges = np.where(np.isfinite(ranges), ranges, 10.0)
-        ranges = np.where(ranges < MIN_RANGE_OBSTACLE, MIN_RANGE_OBSTACLE, ranges)
-
-        if LIDAR_SMOOTH_WINDOW > 1:
-            ranges = smooth_lidar(ranges, LIDAR_SMOOTH_WINDOW)
-        
-        angle_min = latest_scan.angle_min
-        angle_increment = latest_scan.angle_increment
-        
-        num_rays = len(ranges)
-        obstacle_centers = []  # List of center angles
-        
-        # Calculate expected angular width of car at different distances
-        # Width = 2 * atan(CAR_WIDTH/2 / distance)
-        # For typical obstacle distance, this gives us expected width in degrees
-        
-        # Use average expected distance for car width calculation
-        avg_obstacle_dist = OBSTACLE_DISTANCE / 2.0
-        expected_width_rad = 2.0 * math.atan((CAR_WIDTH / 2.0) / avg_obstacle_dist)
-        expected_width_deg = math.degrees(expected_width_rad)
-        width_tolerance = expected_width_deg * 0.5  # +/- 50% tolerance
-        
-        rospy.loginfo("Expected car width: {:.1f}° ± {:.1f}°".format(expected_width_deg, width_tolerance))
-        
-        # Find continuous regions where distance < OBSTACLE_DISTANCE
-        in_obstacle = False
-        obstacle_start_idx = 0
-        gap_count = 0
-        max_gap_allowed = 3  # Allow up to 3 consecutive invalid points
-        
-        for i in range(num_rays):
-            is_obstacle_ray = ranges[i] < OBSTACLE_DISTANCE
-            
-            # Exclude back of car (225° to 315°)
-            lidar_angle_rad = angle_min + (i * angle_increment)
-            lidar_angle_deg = math.degrees(lidar_angle_rad) % 360
-            is_back = 225 <= lidar_angle_deg < 315
-            
-            if is_obstacle_ray and not is_back:
-                gap_count = 0
-                if not in_obstacle:
-                    in_obstacle = True
-                    obstacle_start_idx = i
-            else:
-                if in_obstacle:
-                    gap_count += 1
-                    # If gap is too large, end the obstacle
-                    if gap_count > max_gap_allowed:
-                        in_obstacle = False
-                        obstacle_end_idx = i - gap_count
-                        
-                        # Calculate obstacle properties
-                        center_idx = (obstacle_start_idx + obstacle_end_idx) / 2.0
-                        
-                        # Center angle
-                        center_angle_rad = angle_min + (center_idx * angle_increment)
-                        center_angle = math.degrees(center_angle_rad) % 360
-                        
-                        # Angular width
-                        start_angle_rad = angle_min + (obstacle_start_idx * angle_increment)
-                        end_angle_rad = angle_min + (obstacle_end_idx * angle_increment)
-                        width = math.degrees(abs(end_angle_rad - start_angle_rad))
-                        
-                        # Check if width matches car width within tolerance
-                        if abs(width - expected_width_deg) <= width_tolerance:
-                            obstacle_centers.append(center_angle)
-                            rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
-        
-        # Handle case where obstacle extends to the end of the scan
-        if in_obstacle:
-            obstacle_end_idx = num_rays - 1
-            center_idx = (obstacle_start_idx + obstacle_end_idx) / 2.0
-            
-            center_angle_rad = angle_min + (center_idx * angle_increment)
-            center_angle = math.degrees(center_angle_rad) % 360
-            
-            start_angle_rad = angle_min + (obstacle_start_idx * angle_increment)
-            end_angle_rad = angle_min + (obstacle_end_idx * angle_increment)
-            width = math.degrees(abs(end_angle_rad - start_angle_rad))
-            
-            if abs(width - expected_width_deg) <= width_tolerance:
-                obstacle_centers.append(center_angle)
-                rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
-        
-        return obstacle_centers
-        
-    except Exception as e:
-        rospy.logerr("Error in check_for_obstacle: {}".format(str(e)))
-        return []
-
-
-def lidar_callback(data):
-    """Callback to store the latest LiDAR scan."""
-    global latest_scan
-    latest_scan = data
 
 
 def purepursuit_control_node(data):
@@ -551,19 +371,20 @@ def purepursuit_control_node(data):
     normalized_steering = steering_angle / max_steering_angle_rad
     command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
-    # TODO 6: Use velocity from waypoint data
-    # Get velocity from the closest waypoint and scale by velocity percentage
-    if len(plan[base_index]) >= 3:  # Check if velocity data exists
-        waypoint_velocity = plan[base_index][2]
-        command.speed = waypoint_velocity * VELOCITY_PERCENTAGE
-    else:
-        # Fallback to dynamic scaling if no velocity data
-        abs_steering = abs(command.steering_angle)
-        max_speed = 65.0
-        min_speed = 5.0
-        speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
-        command.speed = min_speed + (max_speed - min_speed) * speed_scale
+    # TODO 6: Implement Dynamic Velocity Scaling instead of a constant speed
+    # Scale velocity based on steering angle - slow down for sharp turns
+    # Use absolute value of steering angle to determine speed
+    abs_steering = abs(command.steering_angle)
     
+    # Define speed parameters
+    max_speed = 65.0  # Maximum speed on straightaways
+    min_speed = 5.0   # Minimum speed for sharp turns
+    
+    # Linear velocity scaling based on steering angle
+    # When steering is 0, speed is max_speed
+    # When steering is at max (100), speed is min_speed
+    speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
+    command.speed = min_speed + (max_speed - min_speed) * speed_scale
     current_speed_cmd = command.speed
     command_pub.publish(command)
 
@@ -598,19 +419,13 @@ if __name__ == '__main__':
     try:
 
         rospy.init_node('pure_pursuit', anonymous = True)
-        rospy.loginfo('obtaining trajectory')
-        for trajectory_name in trajectory_names:
-            plan = construct_path(trajectory_name)
-            plans.append(plan)
-        plan = plans[1] # the optimal path should be the second plan, start on that
-        current_plan_idx = 1
-        # Publish the reference path marker once after loading
-        rospy.sleep(0.5)  # Wait for publishers to be ready
-        publish_path_marker()
-        rospy.loginfo('Published reference path to RViz')
-
-        # Subscribe to LiDAR for obstacle detection
-        rospy.Subscriber('/{}/scan'.format(car_name), LaserScan, lidar_callback)
+        if not plan:
+            rospy.loginfo('obtaining trajectory')
+            construct_path()
+            # Publish the reference path marker once after loading
+            rospy.sleep(0.5)  # Wait for publishers to be ready
+            publish_path_marker()
+            rospy.loginfo('Published reference path to RViz')
 
         # This node subsribes to the pose estimate provided by the Particle Filter. 
         # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
