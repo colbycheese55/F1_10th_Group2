@@ -232,11 +232,6 @@ STEERING_RANGE = 100.0
 # vehicle physical parameters
 WHEELBASE_LEN       = 0.325
 
-# -------- Stanley method parameters --------
-K_E = 0.5  # Crosstrack error gain
-K_H = 1.0  # Heading error gain
-steering_limit = 0.4  # Maximum steering angle in radians (about 23 degrees)
-
 # -------- Adaptive lookahead parameters --------
 # Lookahead limits (meters)
 L_MIN    = 0.8
@@ -354,76 +349,31 @@ def purepursuit_control_node(data):
         target_y = plan[-1][1]
 
 
-    # TODO 4: Implement the Stanley method to compute the steering angle
-    # Stanley method: θ(t) = φ(t) + arctan(K_e * e(t) / v(t))
-    # where φ(t) is heading error and e(t) is crosstrack error
+    # TODO 4: Implement the pure pursuit algorithm to compute the steering angle given the pose of the car, target point, and lookahead distance.
+    # Transform target point to vehicle frame of reference
+    dx = target_x - odom_x
+    dy = target_y - odom_y
     
-    # Calculate the front wheelbase position (project forward from current position)
-    wheelbase_front_x = odom_x + WHEELBASE_LEN * math.cos(heading)
-    wheelbase_front_y = odom_y + WHEELBASE_LEN * math.sin(heading)
+    # Rotate the target point to the vehicle's coordinate frame
+    target_x_vehicle = math.cos(-heading) * dx - math.sin(-heading) * dy
+    target_y_vehicle = math.sin(-heading) * dx + math.cos(-heading) * dy
     
-    # Find closest point on path to the front wheelbase position
-    min_distance_front = float('inf')
-    front_index = base_index
+    # Calculate the curvature using pure pursuit formula
+    # curvature = 2 * y / L^2, where y is lateral offset and L is lookahead distance
+    curvature = 2.0 * target_y_vehicle / (lookahead_distance ** 2)
     
-    for i in range(len(plan)):
-        dx = plan[i][0] - wheelbase_front_x
-        dy = plan[i][1] - wheelbase_front_y
-        distance = math.sqrt(dx*dx + dy*dy)
-        
-        if distance < min_distance_front:
-            min_distance_front = distance
-            front_index = i
-    
-    # Calculate path heading at the closest point to front wheelbase
-    # Use the direction from the base point to the next point on the path
-    next_index = (front_index + 1) % len(plan)
-    path_heading = math.atan2(plan[next_index][1] - plan[front_index][1],
-                              plan[next_index][0] - plan[front_index][0])
-    
-    # Normalize angles to [0, 2π]
-    current_heading = heading
-    if current_heading < 0:
-        current_heading += 2 * math.pi
-    if path_heading < 0:
-        path_heading += 2 * math.pi
-    
-    # Calculate heading error (φ(t))
-    heading_error = path_heading - current_heading
-    # Normalize to [-π, π]
-    if heading_error > math.pi:
-        heading_error -= 2 * math.pi
-    elif heading_error < -math.pi:
-        heading_error += 2 * math.pi
-    
-    # Apply heading error gain
-    heading_error *= K_H
-    
-    # Calculate crosstrack error (e(t))
-    # Transform closest front point to vehicle frame to get lateral error
-    dx_front = plan[front_index][0] - wheelbase_front_x
-    dy_front = plan[front_index][1] - wheelbase_front_y
-    crosstrack_error_y = math.sin(-current_heading) * dx_front + math.cos(-current_heading) * dy_front
-    
-    # Get current velocity estimate (use last commanded speed)
-    current_velocity = max(1.0, current_speed_cmd / 10.0)  # Convert from 0-100 scale to m/s, min 1.0 to avoid division by zero
-    
-    # Calculate crosstrack error term: arctan(K_e * e(t) / v(t))
-    crosstrack_error = math.atan2(K_E * crosstrack_error_y, current_velocity)
-    
-    # Stanley method steering angle: θ(t) = φ(t) + arctan(K_e * e(t) / v(t))
-    steering_angle = heading_error + crosstrack_error
-    
-    # Clip to steering limits
-    steering_angle = max(-steering_limit, min(steering_limit, steering_angle))
+    # Calculate steering angle using bicycle model
+    # steering_angle = atan(wheelbase * curvature)
+    steering_angle = math.atan(WHEELBASE_LEN * curvature)
 
 
     # TODO 5: Ensure that the calculated steering angle is within the STEERING_RANGE and assign it to command.steering_angle
     # Convert steering angle from radians to the range [-100, 100]
-    # steering_angle is already clipped to steering_limit in radians
+    # Assuming maximum steering angle is around 0.4 radians (about 23 degrees)
+    max_steering_angle_rad = 0.4
     
     # Normalize to [-1, 1] then scale to [-100, 100]
-    normalized_steering = steering_angle / steering_limit
+    normalized_steering = steering_angle / max_steering_angle_rad
     command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
     # TODO 6: Use velocity from waypoint CSV file
