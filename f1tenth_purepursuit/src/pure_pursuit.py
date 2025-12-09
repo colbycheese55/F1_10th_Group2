@@ -55,7 +55,7 @@ global curr_polygon
 wp_seq          = 0
 control_polygon = PolygonStamped()
 
-def construct_path(trajectory_name: str):
+def construct_path(trajectory_name):
     plan = list()
     # Function to construct the path from a CSV file
     # New format: x, y, velocity
@@ -75,7 +75,7 @@ def construct_path(trajectory_name: str):
     rospy.loginfo('Loaded {} waypoints from {}'.format(len(plan), trajectory_name))
     return plan
 
-def consider_switching_plans(obstacles: list) -> None:
+def consider_switching_plans(obstacles):
     global plan
     global current_plan_idx
 
@@ -329,7 +329,7 @@ def check_for_obstacle():
     
     Returns:
         List of center angles (in degrees) where obstacles matching car width are detected.
-        Car frame: 0° = right, 90° = front, 180° = left, 270° = back (excluded).
+        Car frame: 0 = right, 90 = front, 180 = left, 270 = back (excluded).
     """
     global latest_scan
     
@@ -362,7 +362,7 @@ def check_for_obstacle():
         expected_width_deg = math.degrees(expected_width_rad)
         width_tolerance = expected_width_deg * 0.5  # +/- 50% tolerance
         
-        rospy.loginfo("Expected car width: {:.1f}° ± {:.1f}°".format(expected_width_deg, width_tolerance))
+        rospy.loginfo("Expected car width: {:.1f} +- {:.1f}".format(expected_width_deg, width_tolerance))
         
         # Find continuous regions where distance < OBSTACLE_DISTANCE
         in_obstacle = False
@@ -373,7 +373,7 @@ def check_for_obstacle():
         for i in range(num_rays):
             is_obstacle_ray = ranges[i] < OBSTACLE_DISTANCE
             
-            # Exclude back of car (225° to 315°)
+            # Exclude back of car (225 to 315)
             lidar_angle_rad = angle_min + (i * angle_increment)
             lidar_angle_deg = math.degrees(lidar_angle_rad) % 360
             is_back = 225 <= lidar_angle_deg < 315
@@ -406,7 +406,7 @@ def check_for_obstacle():
                         # Check if width matches car width within tolerance
                         if abs(width - expected_width_deg) <= width_tolerance:
                             obstacle_centers.append(center_angle)
-                            rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
+                            rospy.loginfo("Valid obstacle at {:.1f} (width={:.1f})".format(center_angle, width))
         
         # Handle case where obstacle extends to the end of the scan
         if in_obstacle:
@@ -422,7 +422,7 @@ def check_for_obstacle():
             
             if abs(width - expected_width_deg) <= width_tolerance:
                 obstacle_centers.append(center_angle)
-                rospy.loginfo("Valid obstacle at {:.1f}° (width={:.1f}°)".format(center_angle, width))
+                rospy.loginfo("Valid obstacle at {:.1f} (width={:.1f})".format(center_angle, width))
         
         return obstacle_centers
         
