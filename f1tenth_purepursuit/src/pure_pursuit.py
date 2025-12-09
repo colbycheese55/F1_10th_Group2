@@ -30,6 +30,7 @@ SAFETY_MARGIN       = 0.05  # meters
 DISPARITY_THRESHOLD = 0.20  # meters (threshold for detecting obstacles)
 MIN_RANGE_OBSTACLE  = 0.18  # minimum range to consider as blocked
 OBSTACLE_DISTANCE   = 2.0   # distance forward to check for obstacles (meters)
+LIDAR_SMOOTH_WINDOW  = 5     # window size for LiDAR smoothing (set to 1 to disable)
 
 # Global variable for latest LiDAR scan
 latest_scan         = None
@@ -270,6 +271,30 @@ def compute_lookahead_distance():
     ratio = (v - V_MIN_LD) / float(V_MAX_LD - V_MIN_LD)
     return L_MIN + ratio * (L_MAX - L_MIN)
 
+def smooth_lidar(self, ranges, window_size):
+        """
+        Apply a moving average filter to smooth lidar data.
+        Uses numpy convolution for efficiency.
+        
+        Args:
+            ranges: numpy array of lidar ranges
+            window_size: size of the smoothing window (odd number recommended)
+        
+        Returns:
+            Smoothed numpy array of the same size
+        """
+        if window_size <= 1:
+            return ranges
+        
+        # Create a normalized averaging kernel
+        kernel = np.ones(window_size) / window_size
+        
+        # Apply convolution with 'same' mode to maintain array size
+        # Use 'same' mode to keep the same length as input
+        smoothed = np.convolve(ranges, kernel, mode='same')
+        
+        return smoothed
+
 def check_for_obstacle():
     """
     Detect obstacles all around the car (except the back) within a certain distance.
@@ -291,6 +316,9 @@ def check_for_obstacle():
         # Handle invalid ranges
         ranges = np.where(np.isfinite(ranges), ranges, 10.0)
         ranges = np.where(ranges < MIN_RANGE_OBSTACLE, MIN_RANGE_OBSTACLE, ranges)
+
+        if LIDAR_SMOOTH_WINDOW > 1:
+            ranges = smooth_lidar(ranges, LIDAR_SMOOTH_WINDOW)
         
         angle_min = latest_scan.angle_min
         angle_increment = latest_scan.angle_increment
