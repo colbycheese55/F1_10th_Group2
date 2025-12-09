@@ -18,11 +18,13 @@ from sensor_msgs.msg import LaserScan
 import tf
 
 # Global variables for storing the path, path resolution, frame ID, and car details
-plan                = []
-path_resolution     = []
+plans               = [] # list of plans (list)
+plan                = [] # current plan, chosen from `plans`
+current_plan_idx    = -1 # placeholder
+# path_resolution     = []
 frame_id            = 'map'
 car_name            = str(sys.argv[1])
-trajectory_name     = str(sys.argv[2])
+trajectory_names    = [str(sys.argv[2]), str(sys.argv[3]), str(sys.argv[4])] # raceline order: interior, center, exterior 
 
 # LiDAR obstacle detection parameters (for detecting 32cm wide car)
 CAR_WIDTH           = 0.32  # meters (32 cm)
@@ -53,7 +55,8 @@ global curr_polygon
 wp_seq          = 0
 control_polygon = PolygonStamped()
 
-def construct_path():
+def construct_path(trajectory_name: str):
+    plan = list()
     # Function to construct the path from a CSV file
     # TODO: Modify this path to match the folder where the csv file containing the path is located.
     file_path = os.path.expanduser('/home/nvidia/{}.csv'.format(trajectory_name))
@@ -67,11 +70,36 @@ def construct_path():
         for point in range(0, len(plan[index])):
             plan[index][point] = float(plan[index][point])
 
-    for index in range(1, len(plan)):
-         dx = plan[index][0] - plan[index-1][0]
-         dy = plan[index][1] - plan[index-1][1]
-         path_resolution.append(math.sqrt(dx*dx + dy*dy))
+    # for index in range(1, len(plan)):
+        #  dx = plan[index][0] - plan[index-1][0]
+        #  dy = plan[index][1] - plan[index-1][1]
+        #  path_resolution.append(math.sqrt(dx*dx + dy*dy))
 
+    return plan
+
+def consider_switching_plans(obstacles: list) -> None:
+    global plan
+    global current_plan_idx
+
+    FRONT_ANGLE_MIN, FRONT_ANGLE_MAX = 70, 110 # an obstacle must be in this range to considered in front of the car
+    LEFT_ANGLE_MAX, RIGHT_ANGLE_MIN = 210, -30
+
+    # if on the optimal plan and there are obstacles, switch lanes, prefer interior lane
+    if current_plan_idx == 1 and any(x > FRONT_ANGLE_MIN and x < FRONT_ANGLE_MAX for x in obstacles):
+        if not any(x < LEFT_ANGLE_MAX and x > FRONT_ANGLE_MAX for x in obstacles):
+            plan = plans[0]
+            current_plan_idx = 0
+        else:
+            plan = plans[2]
+            current_plan_idx = 2
+    # if on the interior plan and there are no obstacles on to the right, switch lanes
+    elif current_plan_idx == 0 and not any(x > RIGHT_ANGLE_MIN and x < FRONT_ANGLE_MIN for x in obstacles):
+        plan = plans[1]
+        current_plan_idx = 1
+    # if on the exterior plan and there are no obstacles on to the left, switch lanes
+    elif current_plan_idx == 2 and not any(x < LEFT_ANGLE_MAX and x > FRONT_ANGLE_MAX for x in obstacles):
+        plan = plans[1]
+        current_plan_idx = 1
 
 def publish_path_marker():
     """Publish the reference path as a LINE_STRIP marker for RViz visualization."""
@@ -571,13 +599,16 @@ if __name__ == '__main__':
     try:
 
         rospy.init_node('pure_pursuit', anonymous = True)
-        if not plan:
-            rospy.loginfo('obtaining trajectory')
-            construct_path()
-            # Publish the reference path marker once after loading
-            rospy.sleep(0.5)  # Wait for publishers to be ready
-            publish_path_marker()
-            rospy.loginfo('Published reference path to RViz')
+        rospy.loginfo('obtaining trajectory')
+        for trajectory_name in trajectory_names:
+            plan = construct_path(trajectory_name)
+            plans.append(plan)
+        plan = plans[1] # the optimal path should be the second plan, start on that
+        current_plan_idx = 1
+        # Publish the reference path marker once after loading
+        rospy.sleep(0.5)  # Wait for publishers to be ready
+        publish_path_marker()
+        rospy.loginfo('Published reference path to RViz')
 
         # Subscribe to LiDAR for obstacle detection
         rospy.Subscriber('/{}/scan'.format(car_name), LaserScan, lidar_callback)
