@@ -355,8 +355,8 @@ def purepursuit_control_node(data):
 
 
     # TODO 4: Implement the Stanley method to compute the steering angle
-    # Stanley method: θ(t) = φ(t) + arctan(K_e * e(t) / v(t))
-    # where φ(t) is heading error and e(t) is crosstrack error
+    # Stanley method: (t) = (t) + arctan(K_e * e(t) / v(t))
+    # where (t) is heading error and e(t) is crosstrack error
     
     # Calculate the front wheelbase position (project forward from current position)
     wheelbase_front_x = odom_x + WHEELBASE_LEN * math.cos(heading)
@@ -381,16 +381,16 @@ def purepursuit_control_node(data):
     path_heading = math.atan2(plan[next_index][1] - plan[front_index][1],
                               plan[next_index][0] - plan[front_index][0])
     
-    # Normalize angles to [0, 2π]
+    # Normalize angles to [0, 2]
     current_heading = heading
     if current_heading < 0:
         current_heading += 2 * math.pi
     if path_heading < 0:
         path_heading += 2 * math.pi
     
-    # Calculate heading error (φ(t))
+    # Calculate heading error ((t))
     heading_error = path_heading - current_heading
-    # Normalize to [-π, π]
+    # Normalize to [-, ]
     if heading_error > math.pi:
         heading_error -= 2 * math.pi
     elif heading_error < -math.pi:
@@ -411,7 +411,7 @@ def purepursuit_control_node(data):
     # Calculate crosstrack error term: arctan(K_e * e(t) / v(t))
     crosstrack_error = math.atan2(K_E * crosstrack_error_y, current_velocity)
     
-    # Stanley method steering angle: θ(t) = φ(t) + arctan(K_e * e(t) / v(t))
+    # Stanley method steering angle: (t) = (t) + arctan(K_e * e(t) / v(t))
     steering_angle = heading_error + crosstrack_error
     
     # Clip to steering limits
