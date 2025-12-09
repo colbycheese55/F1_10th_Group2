@@ -15,6 +15,37 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
 import tf
 
+# ============================================================================
+# PARAMETERS - Tune these values to adjust controller behavior
+# ============================================================================
+
+# Steering Range from -100.0 to 100.0
+STEERING_RANGE = 100.0
+
+# Vehicle physical parameters
+WHEELBASE_LEN = 0.325
+
+# Adaptive lookahead parameters
+# Lookahead limits (meters)
+L_MIN = 0.8
+L_MAX = 2.0
+
+# Speed range where we interpolate (same units as command.speed)
+V_MIN_LD = 8.0
+V_MAX_LD = 15.0
+
+# Speed control parameters
+MAX_SPEED = 65.0  # Maximum speed on straightaways
+MIN_SPEED = 5.0   # Minimum speed for sharp turns
+VELOCITY_SCALE_FACTOR = 16.0  # Converts m/s from waypoint to 0-100 range
+
+# Pure pursuit steering parameters
+MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians (about 23 degrees)
+
+# ============================================================================
+# END PARAMETERS
+# ============================================================================
+
 # Global variables for storing the path, path resolution, frame ID, and car details
 plan                = []
 path_resolution     = []
@@ -226,21 +257,6 @@ def publish_visualization_markers(odom_x, odom_y, heading, pose_x, pose_y, targe
     steering_marker_pub.publish(steering_marker)
 
 
-# Steering Range from -100.0 to 100.0
-STEERING_RANGE = 100.0
-
-# vehicle physical parameters
-WHEELBASE_LEN       = 0.325
-
-# -------- Adaptive lookahead parameters --------
-# Lookahead limits (meters)
-L_MIN    = 0.8
-L_MAX    = 2
-
-# Speed range where we interpolate (same units as command.speed)
-V_MIN_LD = 8.0
-V_MAX_LD = 15.0
-
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
 
@@ -369,11 +385,8 @@ def purepursuit_control_node(data):
 
     # TODO 5: Ensure that the calculated steering angle is within the STEERING_RANGE and assign it to command.steering_angle
     # Convert steering angle from radians to the range [-100, 100]
-    # Assuming maximum steering angle is around 0.4 radians (about 23 degrees)
-    max_steering_angle_rad = 0.4
-    
     # Normalize to [-1, 1] then scale to [-100, 100]
-    normalized_steering = steering_angle / max_steering_angle_rad
+    normalized_steering = steering_angle / MAX_STEERING_ANGLE_RAD
     command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
     # TODO 6: Use velocity from waypoint CSV file
@@ -384,18 +397,14 @@ def purepursuit_control_node(data):
     waypoint_velocity = plan[base_index][2] if len(plan[base_index]) > 2 else 0.0
     
     if waypoint_velocity > 0.0:
-        # Use the velocity from the waypoint (assume it's in m/s or similar units)
+        # Use the velocity from the waypoint
         # Scale from m/s to the car's 0-100 speed range
-        # Assuming waypoint velocities are in m/s, multiply by a scale factor
-        velocity_scale_factor = 16.0  # Tunable: converts m/s to 0-100 range (e.g., 5 m/s -> 50)
-        command.speed = min(100.0, waypoint_velocity * velocity_scale_factor)
+        command.speed = min(100.0, waypoint_velocity * VELOCITY_SCALE_FACTOR)
     else:
         # Fall back to dynamic velocity scaling based on steering angle
         abs_steering = abs(command.steering_angle)
-        max_speed = 65.0  # Maximum speed on straightaways
-        min_speed = 5.0   # Minimum speed for sharp turns
         speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
-        command.speed = min_speed + (max_speed - min_speed) * speed_scale
+        command.speed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * speed_scale
     
     current_speed_cmd = command.speed
     command_pub.publish(command)
