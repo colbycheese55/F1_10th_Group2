@@ -55,6 +55,7 @@ VELOCITY_PERCENTAGE = 1.0     # Multiplier for target velocity (1.0 = 100%, 0.5 
 # Steering parameters
 MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians
 STEERING_LIMIT_DEG = 25.0     # Steering limit in degrees
+STEERING_BIAS_DEG = 5.0       # Steering bias to correct for hardware issues (positive = right)
 
 # Occupancy grid parameters
 GRID_WIDTH_METERS = 3.0     # Width of occupancy grid in meters
@@ -582,6 +583,9 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     # Calculate steering angle using bicycle model
     # steering_angle = atan(wheelbase * curvature)
     steering_angle = math.atan(WHEELBASE_LEN * curvature)
+    
+    # Apply steering bias to correct for hardware issues
+    steering_angle += math.radians(STEERING_BIAS_DEG)
     
     # Clip to maximum steering angle
     steering_angle = np.clip(steering_angle, -math.radians(STEERING_LIMIT_DEG), math.radians(STEERING_LIMIT_DEG))
