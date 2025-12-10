@@ -93,8 +93,13 @@ goal_pos = None
 closest_waypoint_index = 0
 target_velocity = 0.0
 obstacle_detected = False
+obstacle_detected_count = 0  # Hysteresis counter for obstacle detection
+OBSTACLE_HYSTERESIS_THRESHOLD = 3  # Number of frames before switching state
 current_speed_cmd = 0.0
 occupancy_grid = None
+last_steering_cmd = 0.0  # For steering smoothing
+STEERING_SMOOTHING_FACTOR = 0.3  # Lower = smoother but slower response
+last_avoidance_direction = 0  # Track which direction we're avoiding (-1=left, 1=right, 0=none)
 
 # Grid parameters (computed at runtime)
 grid_height = 0
@@ -551,7 +556,7 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     Compute steering using pure pursuit algorithm.
     Uses the same algorithm as pure_pursuit.py.
     """
-    global current_speed_cmd
+    global current_speed_cmd, last_steering_cmd
     
     command = AckermannDrive()
     
@@ -574,7 +579,14 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     
     # Normalize steering to [-100, 100] range
     normalized_steering = steering_angle / MAX_STEERING_ANGLE_RAD
-    command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
+    raw_steering_cmd = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
+    
+    # Apply steering smoothing to reduce oscillation
+    # Exponential moving average filter
+    smoothed_steering = (STEERING_SMOOTHING_FACTOR * raw_steering_cmd + 
+                         (1.0 - STEERING_SMOOTHING_FACTOR) * last_steering_cmd)
+    command.steering_angle = smoothed_steering
+    last_steering_cmd = smoothed_steering
     
     # Use velocity from waypoint if available, otherwise scale based on steering
     if target_velocity_value > 0.0:
@@ -633,7 +645,7 @@ def scan_callback(scan_msg):
     LiDAR scan callback - main control loop.
     Updates occupancy grid and performs obstacle avoidance.
     """
-    global obstacle_detected, goal_pos
+    global obstacle_detected, obstacle_detected_count, goal_pos, last_avoidance_direction
     
     if current_pose is None or len(plan) == 0:
         return
@@ -681,11 +693,36 @@ def scan_callback(scan_msg):
     
     MARGIN = int(CELLS_PER_METER * COLLISION_MARGIN_METERS)
     
-    if check_collision(current_pos_grid, goal_pos_grid, margin=MARGIN):
+    # Check for collision
+    collision_now = check_collision(current_pos_grid, goal_pos_grid, margin=MARGIN)
+    
+    # Apply hysteresis to obstacle detection to prevent rapid switching
+    if collision_now:
+        obstacle_detected_count = min(obstacle_detected_count + 1, OBSTACLE_HYSTERESIS_THRESHOLD + 1)
+    else:
+        obstacle_detected_count = max(obstacle_detected_count - 1, 0)
+    
+    # Only change obstacle_detected state after hysteresis threshold
+    if obstacle_detected_count >= OBSTACLE_HYSTERESIS_THRESHOLD:
         obstacle_detected = True
-        
-        # Try to find alternative path by shifting left/right
-        shifts = [i * (-1 if i % 2 else 1) for i in range(1, 21)]
+    elif obstacle_detected_count == 0:
+        obstacle_detected = False
+    # Otherwise, keep previous state (hysteresis)
+    
+    if obstacle_detected:
+        # Generate shifts - prefer continuing in the same direction to avoid oscillation
+        # Start with the last successful avoidance direction
+        if last_avoidance_direction != 0:
+            # Continue in the same direction first, then try the other side
+            primary_dir = last_avoidance_direction
+            shifts = []
+            for i in range(1, 21):
+                shifts.append(i * primary_dir)  # Primary direction first
+            for i in range(1, 21):
+                shifts.append(i * -primary_dir)  # Then opposite direction
+        else:
+            # No previous direction, try right first (positive shifts), then left
+            shifts = list(range(1, 21)) + list(range(-1, -21, -1))
         
         found = False
         for shift in shifts:
@@ -695,6 +732,8 @@ def scan_callback(scan_msg):
                 target = grid_to_local(new_goal)
                 found = True
                 path_local.append(target)
+                # Remember which direction worked
+                last_avoidance_direction = 1 if shift > 0 else -1
                 rospy.logdebug("Found avoidance path (condition 1)")
                 break
         
@@ -710,6 +749,7 @@ def scan_callback(scan_msg):
                     target = grid_to_local(new_goal)
                     found = True
                     path_local.append(target)
+                    last_avoidance_direction = 1 if shift > 0 else -1
                     rospy.logdebug("Found avoidance path (condition 2)")
                     break
         
@@ -721,26 +761,32 @@ def scan_callback(scan_msg):
                     target = grid_to_local(new_goal)
                     found = True
                     path_local.append(target)
+                    last_avoidance_direction = 1 if shift > 0 else -1
                     rospy.logdebug("Found avoidance path (condition 3)")
                     break
     else:
-        obstacle_detected = False
+        # No obstacle - reset avoidance direction for next obstacle encounter
+        last_avoidance_direction = 0
         target = grid_to_local(goal_pos_grid)
         path_local.append(target)
     
     # Compute and publish drive command
     if target:
         # Use pure pursuit for both normal and obstacle avoidance scenarios
+        # Blend gains smoothly to avoid abrupt steering changes
         if obstacle_detected:
-            rospy.loginfo("Obstacle detected - using pure pursuit avoidance")
-            command = drive_pure_pursuit(target, K_P_OBSTACLE, target_velocity)
+            rospy.logdebug("Obstacle detected - using pure pursuit avoidance")
+            # Use slightly higher gain during avoidance for more responsive steering
+            effective_k_p = K_P_OBSTACLE
         else:
             # Use standard pure pursuit when path is clear
-            command = drive_pure_pursuit(target, K_P, target_velocity)
+            effective_k_p = K_P
+        
+        command = drive_pure_pursuit(target, effective_k_p, target_velocity)
         
         command_pub.publish(command)
         
-        rospy.loginfo("Obstacle: {} | Lookahead: {:.2f} | Speed: {:.2f} | Steering: {:.2f}".format(
+        rospy.logdebug("Obstacle: {} | Lookahead: {:.2f} | Speed: {:.2f} | Steering: {:.2f}".format(
             obstacle_detected, lookahead_distance, command.speed, command.steering_angle
         ))
     else:
