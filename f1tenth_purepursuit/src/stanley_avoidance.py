@@ -37,7 +37,7 @@ STEERING_RANGE = 100.0
 WHEELBASE_LEN = 0.325
 
 # Pure pursuit controller gains
-K_P = 1.0       # Pure pursuit gain
+K_P = 0.8       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
