@@ -348,9 +348,14 @@ def purepursuit_control_node(data):
     target_index = base_index
     
     # Traverse the path until we've covered the lookahead distance
-    for i in range(base_index, len(plan) - 1):
-        dx = plan[i+1][0] - plan[i][0]
-        dy = plan[i+1][1] - plan[i][1]
+    # Use modulo to wrap around the path (treat it as a closed loop)
+    num_points = len(plan)
+    for j in range(num_points):
+        i = (base_index + j) % num_points
+        i_next = (i + 1) % num_points
+        
+        dx = plan[i_next][0] - plan[i][0]
+        dy = plan[i_next][1] - plan[i][1]
         segment_distance = math.sqrt(dx*dx + dy*dy)
         
         if cumulative_distance + segment_distance >= lookahead_distance:
@@ -363,11 +368,11 @@ def purepursuit_control_node(data):
             break
         
         cumulative_distance += segment_distance
-        target_index = i + 1
+        target_index = i_next
     else:
-        # If we've reached the end of the path, use the last point
-        target_x = plan[-1][0]
-        target_y = plan[-1][1]
+        # Fallback (shouldn't happen with wrap-around)
+        target_x = plan[target_index][0]
+        target_y = plan[target_index][1]
 
 
     # TODO 4: Implement the pure pursuit algorithm to compute the steering angle given the pose of the car, target point, and lookahead distance.
@@ -411,12 +416,16 @@ def purepursuit_control_node(data):
         brake_needed = False
         future_speed = target_speed
         
-        # Search forward from base_index for velocity changes
-        for i in range(base_index, min(base_index + 50, len(plan) - 1)):
+        # Search forward from base_index for velocity changes (with wrap-around)
+        num_points = len(plan)
+        for j in range(min(50, num_points)):
+            i = (base_index + j) % num_points
+            i_prev = (base_index + j - 1) % num_points
+            
             # Calculate distance to this waypoint
-            if i > base_index:
-                dx = plan[i][0] - plan[i-1][0]
-                dy = plan[i][1] - plan[i-1][1]
+            if j > 0:
+                dx = plan[i][0] - plan[i_prev][0]
+                dy = plan[i][1] - plan[i_prev][1]
                 cumulative_brake_distance += math.sqrt(dx*dx + dy*dy)
             
             # Stop checking if we've looked far enough ahead
