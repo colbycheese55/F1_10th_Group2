@@ -49,7 +49,7 @@ MAX_LOOKAHEAD_SPEED = 15.0   # Speed at maximum lookahead (0-100 range)
 # Speed control parameters
 MAX_SPEED = 65.0      # Maximum speed (0-100 range)
 MIN_SPEED = 5.0       # Minimum speed for sharp turns
-VELOCITY_SCALE_FACTOR = 18.0  # Converts m/s from waypoint to 0-100 range
+VELOCITY_SCALE_FACTOR = 10.0  # Converts m/s from waypoint to 0-100 range
 VELOCITY_PERCENTAGE = 1.0     # Percentage of target velocity to use
 
 # Steering parameters
