@@ -428,24 +428,28 @@ def init_grid_params():
 
 
 def local_to_grid(x, y):
-    """Convert local (vehicle frame) coordinates to grid indices."""
-    i = int(x * -CELLS_PER_METER + (grid_height - 1))
-    j = int(y * -CELLS_PER_METER + cell_y_offset)
+    """Convert local (vehicle frame) coordinates to grid indices.
+    In vehicle frame: x points forward, y points left
+    In grid: i=0 is furthest forward (x=MAX_LOOKAHEAD), i=grid_height-1 is at car (x=0)
+    """
+    # Map x: [0, MAX_LOOKAHEAD] -> i: [grid_height-1, 0]
+    i = int((MAX_LOOKAHEAD - x) * CELLS_PER_METER)
+    j = int(y * CELLS_PER_METER + cell_y_offset)
     return (i, j)
 
 
 def local_to_grid_parallel(x, y):
     """Vectorized conversion from local to grid coordinates."""
-    i = np.round(x * -CELLS_PER_METER + (grid_height - 1)).astype(int)
-    j = np.round(y * -CELLS_PER_METER + cell_y_offset).astype(int)
+    i = np.round((MAX_LOOKAHEAD - x) * CELLS_PER_METER).astype(int)
+    j = np.round(y * CELLS_PER_METER + cell_y_offset).astype(int)
     return i, j
 
 
 def grid_to_local(point):
     """Convert grid indices to local (vehicle frame) coordinates."""
     i, j = point[0], point[1]
-    x = (i - (grid_height - 1)) / -CELLS_PER_METER
-    y = (j - cell_y_offset) / -CELLS_PER_METER
+    x = MAX_LOOKAHEAD - (i / CELLS_PER_METER)
+    y = (j - cell_y_offset) / CELLS_PER_METER
     return (x, y)
 
 
@@ -720,6 +724,11 @@ def scan_callback(scan_msg):
     # Check for collision
     collision_now = check_collision(current_pos_grid, goal_pos_grid, margin=MARGIN)
     
+    # Debug: Log grid coordinates and collision status
+    rospy.loginfo_throttle(1.0, "Car grid: {}, Goal grid: {}, Collision: {}".format(
+        current_pos_grid, goal_pos_grid, collision_now
+    ))
+    
     # Apply hysteresis to obstacle detection to prevent rapid switching
     if collision_now:
         obstacle_detected_count = min(obstacle_detected_count + 1, OBSTACLE_HYSTERESIS_THRESHOLD + 1)
@@ -734,7 +743,7 @@ def scan_callback(scan_msg):
     # Otherwise, keep previous state (hysteresis)
     
     if obstacle_detected:
-        print
+        rospy.loginfo("OBSTACLE DETECTED - Finding avoidance path")
         # Generate shifts - prefer continuing in the same direction to avoid oscillation
         # Start with the last successful avoidance direction
         if last_avoidance_direction != 0:
@@ -759,7 +768,7 @@ def scan_callback(scan_msg):
                 path_local.append(target)
                 # Remember which direction worked
                 last_avoidance_direction = 1 if shift > 0 else -1
-                print("Found avoidance path (condition 1)")
+                rospy.loginfo("Found avoidance path (condition 1) - shift: {}".format(shift))
                 break
         
         if not found:
@@ -775,7 +784,7 @@ def scan_callback(scan_msg):
                     found = True
                     path_local.append(target)
                     last_avoidance_direction = 1 if shift > 0 else -1
-                    print("Found avoidance path (condition 2)")
+                    rospy.loginfo("Found avoidance path (condition 2) - shift: {}".format(shift))
                     break
         
         if not found:
@@ -787,7 +796,7 @@ def scan_callback(scan_msg):
                     found = True
                     path_local.append(target)
                     last_avoidance_direction = 1 if shift > 0 else -1
-                    print("Found avoidance path (condition 3)")
+                    rospy.loginfo("Found avoidance path (condition 3) - shift: {}".format(shift))
                     break
     else:
         # No obstacle - reset avoidance direction for next obstacle encounter
