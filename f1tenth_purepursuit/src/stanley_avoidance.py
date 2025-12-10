@@ -41,15 +41,15 @@ K_P = 0.5       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
-MIN_LOOKAHEAD = 1.0     # Minimum lookahead distance (meters)
-MAX_LOOKAHEAD = 3.0     # Maximum lookahead distance (meters)
+MIN_LOOKAHEAD = .8   # Minimum lookahead distance (meters)
+MAX_LOOKAHEAD = 2.0     # Maximum lookahead distance (meters)
 MIN_LOOKAHEAD_SPEED = 3.0   # Speed at minimum lookahead
 MAX_LOOKAHEAD_SPEED = 6.0   # Speed at maximum lookahead
 
 # Speed control parameters
 MAX_SPEED = 65.0      # Maximum speed (0-100 range)
 MIN_SPEED = 5.0       # Minimum speed for sharp turns
-VELOCITY_SCALE_FACTOR = 18.0  # Converts m/s from waypoint to 0-100 range
+VELOCITY_SCALE_FACTOR = 10.0  # Converts m/s from waypoint to 0-100 range
 VELOCITY_PERCENTAGE = 1.0     # Percentage of target velocity to use
 
 # Steering parameters
