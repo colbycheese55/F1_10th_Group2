@@ -37,7 +37,7 @@ CAR_NAME = str(sys.argv[1]) if len(sys.argv) > 1 else 'car_2'
 TRAJECTORY_NAME = str(sys.argv[2]) if len(sys.argv) > 2 else 'raceline'
 
 # Control mode parameters
-OVERTAKE_DISTANCE = 3.0         # m - distance ahead to check for opponents
+OVERTAKE_DISTANCE = 1.0         # m - distance ahead to check for opponents
 MIN_OVERTAKE_TIME = 2.0         # seconds - minimum time to stay in overtake mode
 OPPONENT_WIDTH_THRESHOLD = 0.5  # m - lateral width to consider as blocking the path
 CLEAR_PATH_DISTANCE = 4.0       # m - distance needed to consider path clear after overtake
@@ -55,7 +55,7 @@ VELOCITY_SCALE_FACTOR = 20.0    # converts m/s to 0-100 range
 MAX_STEERING_ANGLE_RAD = 0.4    # radians (~23 degrees)
 
 # Follow-the-Gap parameters
-LIDAR_ZERO_DEG_IN_CAR_FRAME = 0.0  # degrees
+LIDAR_ZERO_DEG_IN_CAR_FRAME = 90  # degrees
 STEERING_SIGN = +1.0
 DISPARITY_THRESHOLD = 0.20      # m
 CAR_WIDTH = 0.31                # m
