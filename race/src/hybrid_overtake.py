@@ -41,6 +41,7 @@ OVERTAKE_DISTANCE = 3.0         # m - distance ahead to check for opponents
 MIN_OVERTAKE_TIME = 2.0         # seconds - minimum time to stay in overtake mode
 OPPONENT_WIDTH_THRESHOLD = 0.5  # m - lateral width to consider as blocking the path
 CLEAR_PATH_DISTANCE = 4.0       # m - distance needed to consider path clear after overtake
+MIN_OPPONENT_DISTANCE = 0.4     # m - ignore obstacles closer than this (car body, mounting)
 
 # Pure Pursuit parameters
 WHEELBASE_LEN = 0.325           # m
@@ -272,10 +273,11 @@ class HybridOvertakeNode(object):
         if i0 > i1:
             i0, i1 = i1, i0
         
-        # Find minimum distance in forward cone
+        # Find minimum distance in forward cone (excluding too-close readings)
         min_distance = float('inf')
         for i in range(i0, i1 + 1):
-            if ranges[i] < min_distance:
+            # Ignore readings that are too close (likely the car itself)
+            if ranges[i] > MIN_OPPONENT_DISTANCE and ranges[i] < min_distance:
                 min_distance = ranges[i]
         
         # Opponent detected if something is within overtake distance
