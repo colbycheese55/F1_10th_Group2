@@ -407,8 +407,8 @@ def get_lookahead_waypoint(car_x, car_y, heading, lookahead_distance, base_index
     # Transform target point to vehicle frame
     dx = target_x_world - car_x
     dy = target_y_world - car_y
-    target_x_vehicle = math.cos(-heading) * dx - math.sin(-heading) * dy
-    target_y_vehicle = math.sin(-heading) * dx + math.cos(-heading) * dy
+    target_x_vehicle = math.cos(heading) * dx + math.sin(heading) * dy
+    target_y_vehicle = -math.sin(heading) * dx + math.cos(heading) * dy
     
     return ([target_x_vehicle, target_y_vehicle], 
             [target_x_world, target_y_world], 
