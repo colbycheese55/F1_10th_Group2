@@ -774,27 +774,27 @@ if __name__ == '__main__':
             AckermannDrive, queue_size=1
         )
         polygon_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/visualize'.format(car_name), 
+            '/{}/purepursuit_control/visualize'.format(car_name), 
             PolygonStamped, queue_size=1
         )
         path_marker_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/path_marker'.format(car_name), 
+            '/{}/purepursuit_control/path_marker'.format(car_name), 
             Marker, queue_size=1
         )
         pose_marker_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/pose_marker'.format(car_name), 
+            '/{}/purepursuit_control/pose_marker'.format(car_name), 
             Marker, queue_size=1
         )
         target_marker_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/target_marker'.format(car_name), 
+            '/{}/purepursuit_control/target_marker'.format(car_name), 
             Marker, queue_size=1
         )
         steering_marker_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/steering_marker'.format(car_name), 
+            '/{}/purepursuit_control/steering_marker'.format(car_name), 
             Marker, queue_size=1
         )
         lookahead_marker_pub = rospy.Publisher(
-            '/{}/stanley_avoidance/lookahead_marker'.format(car_name), 
+            '/{}/purepursuit_control/lookahead_marker'.format(car_name), 
             Marker, queue_size=1
         )
         current_waypoint_pub = rospy.Publisher(
