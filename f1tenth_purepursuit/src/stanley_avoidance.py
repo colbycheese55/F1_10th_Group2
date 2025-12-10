@@ -98,7 +98,7 @@ OBSTACLE_HYSTERESIS_THRESHOLD = 3  # Number of frames before switching state
 current_speed_cmd = 0.0
 occupancy_grid = None
 last_steering_cmd = 0.0  # For steering smoothing
-STEERING_SMOOTHING_FACTOR = 0.3  # Lower = smoother but slower response
+STEERING_SMOOTHING_FACTOR = 0.0  # Disabled (0.0) to match pure_pursuit behavior and prevent oscillation
 last_avoidance_direction = 0  # Track which direction we're avoiding (-1=left, 1=right, 0=none)
 
 # Grid parameters (computed at runtime)
@@ -586,12 +586,17 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     normalized_steering = steering_angle / MAX_STEERING_ANGLE_RAD
     raw_steering_cmd = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
     
-    # Apply steering smoothing to reduce oscillation
-    # Exponential moving average filter
-    smoothed_steering = (STEERING_SMOOTHING_FACTOR * raw_steering_cmd + 
-                         (1.0 - STEERING_SMOOTHING_FACTOR) * last_steering_cmd)
-    command.steering_angle = smoothed_steering
-    last_steering_cmd = smoothed_steering
+    # Apply steering smoothing only if enabled (STEERING_SMOOTHING_FACTOR > 0)
+    # Set to 0.0 to match pure_pursuit behavior without smoothing
+    if STEERING_SMOOTHING_FACTOR > 0.0:
+        smoothed_steering = (STEERING_SMOOTHING_FACTOR * raw_steering_cmd + 
+                             (1.0 - STEERING_SMOOTHING_FACTOR) * last_steering_cmd)
+        command.steering_angle = smoothed_steering
+        last_steering_cmd = smoothed_steering
+    else:
+        # No smoothing - direct steering like pure_pursuit
+        command.steering_angle = raw_steering_cmd
+        last_steering_cmd = raw_steering_cmd
     
     # Use velocity from waypoint if available, otherwise scale based on steering
     if target_velocity_value > 0.0:
