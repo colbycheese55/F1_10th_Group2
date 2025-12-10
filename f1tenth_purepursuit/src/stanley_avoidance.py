@@ -502,7 +502,12 @@ def publish_occupancy_grid(frame_id, stamp):
     oc = OccupancyGrid()
     oc.header.frame_id = frame_id
     oc.header.stamp = stamp
-    oc.info.origin.position.y = -((grid_width / 2) + 1) / CELLS_PER_METER
+    # Center the grid on the vehicle/LiDAR
+    # The grid extends from -MAX_LOOKAHEAD behind to 0 ahead (in vehicle frame, x points forward)
+    # And from -GRID_WIDTH_METERS/2 to +GRID_WIDTH_METERS/2 laterally
+    oc.info.origin.position.x = -MAX_LOOKAHEAD  # Grid starts MAX_LOOKAHEAD behind vehicle
+    oc.info.origin.position.y = -GRID_WIDTH_METERS / 2.0  # Center laterally
+    oc.info.origin.position.z = 0.0
     oc.info.width = grid_height
     oc.info.height = grid_width
     oc.info.resolution = 1.0 / CELLS_PER_METER
