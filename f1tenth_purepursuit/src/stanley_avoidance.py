@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 
 """
-Stanley Avoidance Controller for F1Tenth
+Pure Pursuit Avoidance Controller for F1Tenth
 
-This node implements the Stanley steering method with obstacle avoidance
+This node implements the Pure Pursuit steering method with obstacle avoidance
 using an occupancy grid generated from LiDAR scans.
-
-Based on the Stanley Method: https://stevengong.co/notes/Stanley-Method
 """
 
 # Import necessary libraries
@@ -38,10 +36,8 @@ STEERING_RANGE = 100.0
 # Vehicle physical parameters
 WHEELBASE_LEN = 0.325
 
-# Stanley controller gains
-K_E = 2.0       # Cross-track error gain
-K_H = 1.5       # Heading error gain
-K_P = 0.5       # Pure pursuit gain (used when obstacle detected)
+# Pure pursuit controller gains
+K_P = 0.5       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
@@ -389,27 +385,7 @@ def get_lookahead_waypoint(car_x, car_y, heading, lookahead_distance):
     return None, None, -1
 
 
-def get_closest_waypoint_front(car_x, car_y, heading):
-    """Get the closest waypoint to the front of the car (for Stanley controller)."""
-    # Front wheelbase position (0.33m in front of base_link, similar to ROS2 version)
-    front_x = car_x + WHEELBASE_LEN * math.cos(heading)
-    front_y = car_y + WHEELBASE_LEN * math.sin(heading)
-    
-    # Transform waypoints to front wheelbase frame
-    waypoints_vehicle = transform_waypoints_to_vehicle(
-        [[wp[0], wp[1]] for wp in plan], front_x, front_y, heading
-    )
-    
-    # Find closest waypoint
-    min_dist = float('inf')
-    closest_idx = 0
-    for i, wp in enumerate(waypoints_vehicle):
-        dist = math.sqrt(wp[0]**2 + wp[1]**2)
-        if dist < min_dist:
-            min_dist = dist
-            closest_idx = i
-    
-    return waypoints_vehicle[closest_idx], [plan[closest_idx][0], plan[closest_idx][1]], closest_idx
+
 
 
 # Occupancy grid functions
@@ -545,107 +521,57 @@ def check_collision_loose(cell_a, cell_b, margin=0):
     return False
 
 
-def drive_pure_pursuit(target_point, k_p):
+def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     """
     Compute steering using pure pursuit algorithm.
-    Used when obstacles are detected.
+    Uses the same algorithm as pure_pursuit.py.
     """
     global current_speed_cmd
     
     command = AckermannDrive()
     
-    # Calculate curvature/steering angle
-    L = math.sqrt(target_point[0]**2 + target_point[1]**2)
+    # Calculate lookahead distance
+    L = math.sqrt(target_point_vehicle[0]**2 + target_point_vehicle[1]**2)
     if L < 0.01:
         L = 0.01
-    y = target_point[1]
-    angle = k_p * (2 * y) / (L ** 2)
-    angle = np.clip(angle, -math.radians(STEERING_LIMIT_DEG), math.radians(STEERING_LIMIT_DEG))
     
-    # Determine velocity based on steering angle
-    abs_angle_deg = abs(math.degrees(angle))
-    if abs_angle_deg < 10.0:
-        velocity = MAX_SPEED
-    elif abs_angle_deg < 20.0:
-        velocity = (MAX_SPEED + MIN_SPEED) / 2
+    # Pure pursuit curvature calculation
+    # curvature = 2 * y / L^2
+    y = target_point_vehicle[1]
+    curvature = 2.0 * y / (L ** 2)
+    
+    # Calculate steering angle using bicycle model
+    # steering_angle = atan(wheelbase * curvature)
+    steering_angle = math.atan(WHEELBASE_LEN * curvature)
+    
+    # Clip to maximum steering angle
+    steering_angle = np.clip(steering_angle, -math.radians(STEERING_LIMIT_DEG), math.radians(STEERING_LIMIT_DEG))
+    
+    # Normalize steering to [-100, 100] range
+    normalized_steering = steering_angle / MAX_STEERING_ANGLE_RAD
+    command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
+    
+    # Use velocity from waypoint if available, otherwise scale based on steering
+    if target_velocity_value > 0.0:
+        velocity = target_velocity_value * VELOCITY_SCALE_FACTOR * VELOCITY_PERCENTAGE
+        velocity = min(velocity, MAX_SPEED)
     else:
-        velocity = MIN_SPEED
+        # Dynamic velocity scaling based on steering angle
+        abs_angle_deg = abs(math.degrees(steering_angle))
+        if abs_angle_deg < 10.0:
+            velocity = MAX_SPEED
+        elif abs_angle_deg < 20.0:
+            velocity = (MAX_SPEED + MIN_SPEED) / 2
+        else:
+            velocity = MIN_SPEED
+        velocity = velocity * VELOCITY_PERCENTAGE
     
-    # Normalize steering to [-100, 100] range
-    normalized_steering = angle / MAX_STEERING_ANGLE_RAD
-    command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
-    command.speed = velocity * VELOCITY_PERCENTAGE
-    
-    current_speed_cmd = command.speed
-    return command
-
-
-def drive_stanley(car_x, car_y, heading, closest_rear_world, closest_front_world, closest_front_vehicle):
-    """
-    Compute steering using Stanley controller.
-    Used when no obstacles are detected.
-    """
-    global current_speed_cmd
-    
-    command = AckermannDrive()
-    
-    K_V = 0  # Velocity softening term (set to 0 for simplicity)
-    
-    # Calculate path heading from rear to front waypoint
-    path_heading = math.atan2(
-        closest_front_world[1] - closest_rear_world[1],
-        closest_front_world[0] - closest_rear_world[0]
-    )
-    
-    # Current heading of the car (from rear to front wheelbase)
-    front_x = car_x + WHEELBASE_LEN * math.cos(heading)
-    front_y = car_y + WHEELBASE_LEN * math.sin(heading)
-    current_heading_calc = math.atan2(
-        front_y - car_y,
-        front_x - car_x
-    )
-    
-    # Normalize angles to [0, 2*pi]
-    if current_heading_calc < 0:
-        current_heading_calc += 2 * math.pi
-    if path_heading < 0:
-        path_heading += 2 * math.pi
-    
-    # Calculate errors
-    # Cross-track error: lateral offset in vehicle frame
-    crosstrack_error = math.atan2(
-        K_E * closest_front_vehicle[1], 
-        K_V + target_velocity
-    )
-    
-    # Heading error
-    heading_error = path_heading - current_heading_calc
-    if heading_error > math.pi:
-        heading_error -= 2 * math.pi
-    elif heading_error < -math.pi:
-        heading_error += 2 * math.pi
-    
-    heading_error *= K_H
-    
-    # Calculate steering angle
-    angle = heading_error + crosstrack_error
-    angle = np.clip(angle, -math.radians(STEERING_LIMIT_DEG), math.radians(STEERING_LIMIT_DEG))
-    
-    # Set velocity from waypoint
-    velocity = target_velocity * VELOCITY_SCALE_FACTOR * VELOCITY_PERCENTAGE
-    velocity = min(velocity, MAX_SPEED)
-    
-    # Normalize steering to [-100, 100] range
-    normalized_steering = angle / MAX_STEERING_ANGLE_RAD
-    command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
     command.speed = velocity
-    
     current_speed_cmd = command.speed
-    
-    rospy.logdebug("Stanley: heading_error={:.2f}, crosstrack_error={:.2f}, angle={:.2f}deg".format(
-        heading_error, crosstrack_error, math.degrees(angle)))
-    
     return command
+
+
+
 
 
 def pose_callback(data):
@@ -779,20 +705,13 @@ def scan_callback(scan_msg):
     
     # Compute and publish drive command
     if target:
+        # Use pure pursuit for both normal and obstacle avoidance scenarios
         if obstacle_detected:
             rospy.loginfo("Obstacle detected - using pure pursuit avoidance")
-            command = drive_pure_pursuit(target, K_P_OBSTACLE)
+            command = drive_pure_pursuit(target, K_P_OBSTACLE, target_velocity)
         else:
-            # Use Stanley controller when path is clear
-            closest_front_vehicle, closest_front_world, _ = get_closest_waypoint_front(
-                car_x, car_y, current_heading
-            )
-            closest_rear_world = [plan[closest_waypoint_index][0], plan[closest_waypoint_index][1]]
-            
-            command = drive_stanley(
-                car_x, car_y, current_heading,
-                closest_rear_world, closest_front_world, closest_front_vehicle
-            )
+            # Use standard pure pursuit when path is clear
+            command = drive_pure_pursuit(target, K_P, target_velocity)
         
         command_pub.publish(command)
         
@@ -888,7 +807,7 @@ if __name__ == '__main__':
             LaserScan, scan_callback
         )
         
-        rospy.loginfo('Stanley Avoidance node initialized for {}'.format(car_name))
+        rospy.loginfo('Pure Pursuit Avoidance node initialized for {}'.format(car_name))
         rospy.spin()
 
     except rospy.ROSInterruptException:
