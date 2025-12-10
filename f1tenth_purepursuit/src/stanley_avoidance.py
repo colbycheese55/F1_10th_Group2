@@ -50,7 +50,7 @@ MAX_LOOKAHEAD_SPEED = 15.0   # Speed at maximum lookahead (0-100 range)
 MAX_SPEED = 40.0      # Maximum speed (0-100 range)
 MIN_SPEED = 5.0       # Minimum speed for sharp turns
 VELOCITY_SCALE_FACTOR = 10.0  # Converts m/s from waypoint to 0-100 range
-VELOCITY_PERCENTAGE = 10.0     # Percentage of target velocity to use
+VELOCITY_PERCENTAGE = 1.0     # Multiplier for target velocity (1.0 = 100%, 0.5 = 50%)
 
 # Steering parameters
 MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians
@@ -595,10 +595,11 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
     
     # Use velocity from waypoint if available, otherwise scale based on steering
     if target_velocity_value > 0.0:
+        # Convert waypoint velocity (m/s) to 0-100 range and apply multiplier
         velocity = target_velocity_value * VELOCITY_SCALE_FACTOR * VELOCITY_PERCENTAGE
         velocity = min(velocity, MAX_SPEED)
     else:
-        # Dynamic velocity scaling based on steering angle
+        # Dynamic velocity scaling based on steering angle when no waypoint velocity
         abs_angle_deg = abs(math.degrees(steering_angle))
         if abs_angle_deg < 10.0:
             velocity = MAX_SPEED
@@ -606,7 +607,17 @@ def drive_pure_pursuit(target_point_vehicle, k_p, target_velocity_value):
             velocity = (MAX_SPEED + MIN_SPEED) / 2
         else:
             velocity = MIN_SPEED
-        velocity = velocity * VELOCITY_PERCENTAGE
+    
+    # Reduce speed based on steering angle for safety (more aggressive steering = slower)
+    # This provides adaptive speed control even when using waypoint velocities
+    abs_angle_deg = abs(math.degrees(steering_angle))
+    if abs_angle_deg > 20.0:
+        # Very sharp turn - limit speed significantly
+        velocity = min(velocity, MIN_SPEED)
+    elif abs_angle_deg > 15.0:
+        # Sharp turn - reduce speed moderately
+        velocity = min(velocity, (MAX_SPEED + MIN_SPEED) / 2)
+    # Otherwise use calculated velocity
     
     command.speed = velocity
     current_speed_cmd = command.speed
