@@ -37,7 +37,7 @@ STEERING_RANGE = 100.0
 WHEELBASE_LEN = 0.325
 
 # Pure pursuit controller gains
-K_P = 0.5       # Pure pursuit gain
+K_P = 0.7       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
@@ -47,19 +47,19 @@ MIN_LOOKAHEAD_SPEED = 8.0   # Speed at minimum lookahead (0-100 range)
 MAX_LOOKAHEAD_SPEED = 15.0   # Speed at maximum lookahead (0-100 range)
 
 # Speed control parameters
-MAX_SPEED = 65.0      # Maximum speed (0-100 range)
+MAX_SPEED = 40.0      # Maximum speed (0-100 range)
 MIN_SPEED = 5.0       # Minimum speed for sharp turns
 VELOCITY_SCALE_FACTOR = 10.0  # Converts m/s from waypoint to 0-100 range
-VELOCITY_PERCENTAGE = 1.0     # Percentage of target velocity to use
+VELOCITY_PERCENTAGE = 10.0     # Percentage of target velocity to use
 
 # Steering parameters
 MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians
 STEERING_LIMIT_DEG = 25.0     # Steering limit in degrees
 
 # Occupancy grid parameters
-GRID_WIDTH_METERS = 6.0     # Width of occupancy grid in meters
+GRID_WIDTH_METERS = 3.0     # Width of occupancy grid in meters
 CELLS_PER_METER = 10        # Resolution of occupancy grid
-COLLISION_MARGIN_METERS = 0.15  # Safety margin for collision checking (car is ~0.3m wide)
+COLLISION_MARGIN_METERS = 0.18  # Safety margin for collision checking (car is ~0.3m wide)
 
 # ============================================================================
 # END PARAMETERS
