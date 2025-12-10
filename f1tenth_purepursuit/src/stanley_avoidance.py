@@ -37,7 +37,7 @@ STEERING_RANGE = 100.0
 WHEELBASE_LEN = 0.325
 
 # Pure pursuit controller gains
-K_P = 0.7       # Pure pursuit gain
+K_P = 1.0       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
@@ -718,6 +718,7 @@ def scan_callback(scan_msg):
     # Otherwise, keep previous state (hysteresis)
     
     if obstacle_detected:
+        print
         # Generate shifts - prefer continuing in the same direction to avoid oscillation
         # Start with the last successful avoidance direction
         if last_avoidance_direction != 0:
@@ -742,7 +743,7 @@ def scan_callback(scan_msg):
                 path_local.append(target)
                 # Remember which direction worked
                 last_avoidance_direction = 1 if shift > 0 else -1
-                rospy.logdebug("Found avoidance path (condition 1)")
+                print("Found avoidance path (condition 1)")
                 break
         
         if not found:
@@ -758,7 +759,7 @@ def scan_callback(scan_msg):
                     found = True
                     path_local.append(target)
                     last_avoidance_direction = 1 if shift > 0 else -1
-                    rospy.logdebug("Found avoidance path (condition 2)")
+                    print("Found avoidance path (condition 2)")
                     break
         
         if not found:
@@ -770,7 +771,7 @@ def scan_callback(scan_msg):
                     found = True
                     path_local.append(target)
                     last_avoidance_direction = 1 if shift > 0 else -1
-                    rospy.logdebug("Found avoidance path (condition 3)")
+                    print("Found avoidance path (condition 3)")
                     break
     else:
         # No obstacle - reset avoidance direction for next obstacle encounter
@@ -783,7 +784,7 @@ def scan_callback(scan_msg):
         # Use pure pursuit for both normal and obstacle avoidance scenarios
         # Blend gains smoothly to avoid abrupt steering changes
         if obstacle_detected:
-            rospy.logdebug("Obstacle detected - using pure pursuit avoidance")
+            print("Obstacle detected - using pure pursuit avoidance")
             # Use slightly higher gain during avoidance for more responsive steering
             effective_k_p = K_P_OBSTACLE
         else:
@@ -794,7 +795,7 @@ def scan_callback(scan_msg):
         
         command_pub.publish(command)
         
-        rospy.logdebug("Obstacle: {} | Lookahead: {:.2f} | Speed: {:.2f} | Steering: {:.2f}".format(
+        print("Obstacle: {} | Lookahead: {:.2f} | Speed: {:.2f} | Steering: {:.2f}".format(
             obstacle_detected, lookahead_distance, command.speed, command.steering_angle
         ))
     else:
