@@ -673,6 +673,9 @@ def scan_callback(scan_msg):
         goal_world, target_marker_pub, color="red"
     )
     
+    scan_msg.ranges = np.array(scan_msg.ranges)
+    scan_msg.ranges[~np.isfinite(scan_msg.ranges)] = 10.0
+
     # Populate occupancy grid
     populate_occupancy_grid(
         scan_msg.ranges, 
