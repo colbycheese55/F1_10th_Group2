@@ -470,6 +470,9 @@ def purepursuit_control_node(data):
             min_distance = distance
             base_index = i
     
+    # Ensure base_index doesn't go past the end of the plan
+    base_index = min(base_index, len(plan) - 2)
+    
     # Store the base projection coordinates
     pose_x = plan[base_index][0]
     pose_y = plan[base_index][1]
@@ -498,6 +501,8 @@ def purepursuit_control_node(data):
     # Start from the base projection and move forward along the path
     cumulative_distance = 0.0
     target_index = base_index
+    target_x = plan[base_index][0]
+    target_y = plan[base_index][1]
     
     # Traverse the path until we've covered the lookahead distance
     for i in range(base_index, len(plan) - 1):
@@ -505,10 +510,14 @@ def purepursuit_control_node(data):
         dy = plan[i+1][1] - plan[i][1]
         segment_distance = math.sqrt(dx*dx + dy*dy)
         
+        # Skip zero-length segments
+        if segment_distance < 1e-6:
+            continue
+        
         if cumulative_distance + segment_distance >= lookahead_distance:
             # Interpolate to find the exact target point
             remaining_distance = lookahead_distance - cumulative_distance
-            ratio = remaining_distance / segment_distance
+            ratio = min(1.0, remaining_distance / segment_distance)  # Clamp ratio to [0, 1]
             target_x = plan[i][0] + ratio * dx
             target_y = plan[i][1] + ratio * dy
             target_index = i
@@ -516,6 +525,8 @@ def purepursuit_control_node(data):
         
         cumulative_distance += segment_distance
         target_index = i + 1
+        target_x = plan[target_index][0]
+        target_y = plan[target_index][1]
     else:
         # If we've reached the end of the path, use the last point
         target_x = plan[-1][0]
