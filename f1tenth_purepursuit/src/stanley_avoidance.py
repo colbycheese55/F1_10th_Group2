@@ -41,10 +41,10 @@ K_P = 0.5       # Pure pursuit gain
 K_P_OBSTACLE = 0.8  # Pure pursuit gain during obstacle avoidance
 
 # Lookahead parameters
-MIN_LOOKAHEAD = 1.0     # Minimum lookahead distance (meters)
-MAX_LOOKAHEAD = 3.0     # Maximum lookahead distance (meters)
-MIN_LOOKAHEAD_SPEED = 3.0   # Speed at minimum lookahead
-MAX_LOOKAHEAD_SPEED = 6.0   # Speed at maximum lookahead
+MIN_LOOKAHEAD = 0.8     # Minimum lookahead distance (meters)
+MAX_LOOKAHEAD = 2.0     # Maximum lookahead distance (meters)
+MIN_LOOKAHEAD_SPEED = 8.0   # Speed at minimum lookahead (0-100 range)
+MAX_LOOKAHEAD_SPEED = 15.0   # Speed at maximum lookahead (0-100 range)
 
 # Speed control parameters
 MAX_SPEED = 65.0      # Maximum speed (0-100 range)
@@ -309,14 +309,16 @@ def publish_path_marker():
     path_marker_pub.publish(path_marker)
 
 
-def compute_lookahead_distance(velocity):
-    """Compute adaptive lookahead distance based on velocity."""
-    if velocity <= MIN_LOOKAHEAD_SPEED:
+def compute_lookahead_distance():
+    """Compute adaptive lookahead distance based on current speed command."""
+    v = current_speed_cmd
+    
+    if v <= MIN_LOOKAHEAD_SPEED:
         return MIN_LOOKAHEAD
-    if velocity >= MAX_LOOKAHEAD_SPEED:
+    if v >= MAX_LOOKAHEAD_SPEED:
         return MAX_LOOKAHEAD
     
-    ratio = (velocity - MIN_LOOKAHEAD_SPEED) / (MAX_LOOKAHEAD_SPEED - MIN_LOOKAHEAD_SPEED)
+    ratio = (v - MIN_LOOKAHEAD_SPEED) / (MAX_LOOKAHEAD_SPEED - MIN_LOOKAHEAD_SPEED)
     return MIN_LOOKAHEAD + ratio * (MAX_LOOKAHEAD - MIN_LOOKAHEAD)
 
 
@@ -354,35 +356,58 @@ def get_closest_waypoint(car_x, car_y):
     return closest_idx
 
 
-def get_lookahead_waypoint(car_x, car_y, heading, lookahead_distance):
+def get_lookahead_waypoint(car_x, car_y, heading, lookahead_distance, base_index):
     """
     Get the waypoint at the lookahead distance.
+    Uses the same algorithm as pure_pursuit.py - traverse forward from base projection.
     Returns (waypoint_in_vehicle_frame, waypoint_in_world_frame, index)
     """
-    # Transform all waypoints to vehicle frame
-    waypoints_vehicle = transform_waypoints_to_vehicle(
-        [[wp[0], wp[1]] for wp in plan], car_x, car_y, heading
-    )
+    # Start from the base projection and move forward along the path
+    cumulative_distance = 0.0
+    target_index = base_index
     
-    # Calculate distances
-    distances = [math.sqrt(wp[0]**2 + wp[1]**2) for wp in waypoints_vehicle]
+    # Traverse the path until we've covered the lookahead distance
+    # Use modulo to wrap around the path (treat it as a closed loop)
+    num_points = len(plan)
+    target_x_world = None
+    target_y_world = None
     
-    # Find waypoints within lookahead distance, sorted by descending distance
-    valid_indices = []
-    for i, dist in enumerate(distances):
-        if dist < lookahead_distance:
-            valid_indices.append((i, dist))
+    for j in range(num_points):
+        i = (base_index + j) % num_points
+        i_next = (i + 1) % num_points
+        
+        dx = plan[i_next][0] - plan[i][0]
+        dy = plan[i_next][1] - plan[i][1]
+        segment_distance = math.sqrt(dx*dx + dy*dy)
+        
+        if cumulative_distance + segment_distance >= lookahead_distance:
+            # Interpolate to find the exact target point
+            remaining_distance = lookahead_distance - cumulative_distance
+            ratio = remaining_distance / segment_distance if segment_distance > 0 else 0
+            target_x_world = plan[i][0] + ratio * dx
+            target_y_world = plan[i][1] + ratio * dy
+            target_index = i
+            break
+        
+        cumulative_distance += segment_distance
+        target_index = i_next
+    else:
+        # Fallback (shouldn't happen with wrap-around)
+        target_x_world = plan[target_index][0]
+        target_y_world = plan[target_index][1]
     
-    valid_indices.sort(key=lambda x: x[1], reverse=True)
+    if target_x_world is None:
+        return None, None, -1
     
-    # Find the farthest waypoint that is in front of the car
-    for idx, _ in valid_indices:
-        if waypoints_vehicle[idx][0] > 0:  # In front of car
-            return (waypoints_vehicle[idx], 
-                    [plan[idx][0], plan[idx][1]], 
-                    idx)
+    # Transform target point to vehicle frame
+    dx = target_x_world - car_x
+    dy = target_y_world - car_y
+    target_x_vehicle = math.cos(-heading) * dx - math.sin(-heading) * dy
+    target_y_vehicle = math.sin(-heading) * dx + math.cos(-heading) * dy
     
-    return None, None, -1
+    return ([target_x_vehicle, target_y_vehicle], 
+            [target_x_world, target_y_world], 
+            target_index)
 
 
 
@@ -616,12 +641,12 @@ def scan_callback(scan_msg):
     car_x = current_pose.position.x
     car_y = current_pose.position.y
     
-    # Compute lookahead distance
-    lookahead_distance = compute_lookahead_distance(target_velocity)
+    # Compute lookahead distance based on current speed
+    lookahead_distance = compute_lookahead_distance()
     
-    # Get lookahead waypoint
+    # Get lookahead waypoint starting from closest waypoint
     goal_vehicle, goal_world, goal_idx = get_lookahead_waypoint(
-        car_x, car_y, current_heading, lookahead_distance
+        car_x, car_y, current_heading, lookahead_distance, closest_waypoint_index
     )
     
     if goal_vehicle is None:
@@ -644,8 +669,8 @@ def scan_callback(scan_msg):
     )
     convolve_occupancy_grid()
     
-    # Publish occupancy grid for visualization
-    publish_occupancy_grid(scan_msg.header.frame_id, scan_msg.header.stamp)
+    # Publish occupancy grid for visualization (use base_link frame, not laser frame)
+    publish_occupancy_grid('{}/base_link'.format(car_name), scan_msg.header.stamp)
     
     # Check for obstacles and compute avoidance path
     path_local = []
