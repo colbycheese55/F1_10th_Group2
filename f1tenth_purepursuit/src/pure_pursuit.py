@@ -15,42 +15,6 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
 import tf
 
-# ============================================================================
-# PARAMETERS - Tune these values to adjust controller behavior
-# ============================================================================
-
-# Steering Range from -100.0 to 100.0
-STEERING_RANGE = 100.0
-
-# Vehicle physical parameters
-WHEELBASE_LEN = 0.325
-
-# Adaptive lookahead parameters
-# Lookahead limits (meters)
-L_MIN = 0.8
-L_MAX = 2.0
-
-# Speed range where we interpolate (same units as command.speed)
-V_MIN_LD = 8.0
-V_MAX_LD = 15.0
-
-# Speed control parameters
-MAX_SPEED = 65.0  # Maximum speed on straightaways
-MIN_SPEED = 5.0   # Minimum speed for sharp turns
-VELOCITY_SCALE_FACTOR = 20.0  # Converts m/s from waypoint to 0-100 range
-
-# Pure pursuit steering parameters
-MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians (about 23 degrees)
-
-# Braking parameters
-BRAKE_LOOKAHEAD_DISTANCE = 2.0  # How far ahead (in meters) to check for velocity reductions
-MAX_DECELERATION = 30.0  # Maximum deceleration value (negative acceleration in 0-100 range)
-BRAKE_SAFETY_FACTOR = 1.2  # Brake earlier than strictly necessary (1.2 = 20% safety margin)
-
-# ============================================================================
-# END PARAMETERS
-# ============================================================================
-
 # Global variables for storing the path, path resolution, frame ID, and car details
 plan                = []
 path_resolution     = []
@@ -83,17 +47,12 @@ def construct_path():
     with open(file_path) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter = ',')
         for waypoint in csv_reader:
-            if len(waypoint) >= 2:  # Ensure we have at least x, y coordinates
-                plan.append(waypoint)
+            plan.append(waypoint)
 
     # Convert string coordinates to floats and calculate path resolution
-    # New format: x, y, velocity (velocity is optional for backwards compatibility)
     for index in range(0, len(plan)):
         for point in range(0, len(plan[index])):
             plan[index][point] = float(plan[index][point])
-        # If velocity is not provided, append a default value of 0.0
-        if len(plan[index]) < 3:
-            plan[index].append(0.0)
 
     for index in range(1, len(plan)):
          dx = plan[index][0] - plan[index-1][0]
@@ -262,6 +221,21 @@ def publish_visualization_markers(odom_x, odom_y, heading, pose_x, pose_y, targe
     steering_marker_pub.publish(steering_marker)
 
 
+# Steering Range from -100.0 to 100.0
+STEERING_RANGE = 100.0
+
+# vehicle physical parameters
+WHEELBASE_LEN       = 0.325
+
+# -------- Adaptive lookahead parameters --------
+# Lookahead limits (meters)
+L_MIN    = 0.8
+L_MAX    = 2
+
+# Speed range where we interpolate (same units as command.speed)
+V_MIN_LD = 8.0
+V_MAX_LD = 15.0
+
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
 
@@ -348,14 +322,9 @@ def purepursuit_control_node(data):
     target_index = base_index
     
     # Traverse the path until we've covered the lookahead distance
-    # Use modulo to wrap around the path (treat it as a closed loop)
-    num_points = len(plan)
-    for j in range(num_points):
-        i = (base_index + j) % num_points
-        i_next = (i + 1) % num_points
-        
-        dx = plan[i_next][0] - plan[i][0]
-        dy = plan[i_next][1] - plan[i][1]
+    for i in range(base_index, len(plan) - 1):
+        dx = plan[i+1][0] - plan[i][0]
+        dy = plan[i+1][1] - plan[i][1]
         segment_distance = math.sqrt(dx*dx + dy*dy)
         
         if cumulative_distance + segment_distance >= lookahead_distance:
@@ -368,11 +337,11 @@ def purepursuit_control_node(data):
             break
         
         cumulative_distance += segment_distance
-        target_index = i_next
+        target_index = i + 1
     else:
-        # Fallback (shouldn't happen with wrap-around)
-        target_x = plan[target_index][0]
-        target_y = plan[target_index][1]
+        # If we've reached the end of the path, use the last point
+        target_x = plan[-1][0]
+        target_y = plan[-1][1]
 
 
     # TODO 4: Implement the pure pursuit algorithm to compute the steering angle given the pose of the car, target point, and lookahead distance.
@@ -395,90 +364,27 @@ def purepursuit_control_node(data):
 
     # TODO 5: Ensure that the calculated steering angle is within the STEERING_RANGE and assign it to command.steering_angle
     # Convert steering angle from radians to the range [-100, 100]
+    # Assuming maximum steering angle is around 0.4 radians (about 23 degrees)
+    max_steering_angle_rad = 0.4
+    
     # Normalize to [-1, 1] then scale to [-100, 100]
-    normalized_steering = steering_angle / MAX_STEERING_ANGLE_RAD
+    normalized_steering = steering_angle / max_steering_angle_rad
     command.steering_angle = max(-STEERING_RANGE, min(STEERING_RANGE, normalized_steering * STEERING_RANGE))
 
-    # TODO 6: Use velocity from waypoint CSV file with predictive braking
-    # If the waypoint has a velocity value (index 2), use it
-    # Otherwise fall back to dynamic velocity scaling based on steering angle
+    # TODO 6: Implement Dynamic Velocity Scaling instead of a constant speed
+    # Scale velocity based on steering angle - slow down for sharp turns
+    # Use absolute value of steering angle to determine speed
+    abs_steering = abs(command.steering_angle)
     
-    # Find the closest waypoint for velocity reference (same as base_index)
-    waypoint_velocity = plan[base_index][2] if len(plan[base_index]) > 2 else 0.0
+    # Define speed parameters
+    max_speed = 65.0  # Maximum speed on straightaways
+    min_speed = 5.0   # Minimum speed for sharp turns
     
-    if waypoint_velocity > 0.0:
-        # Use the velocity from the waypoint
-        # Scale from m/s to the car's 0-100 speed range
-        target_speed = min(100.0, waypoint_velocity * VELOCITY_SCALE_FACTOR)
-        
-        # Predictive braking: look ahead for velocity reductions
-        cumulative_brake_distance = 0.0
-        brake_needed = False
-        future_speed = target_speed
-        
-        # Search forward from base_index for velocity changes (with wrap-around)
-        num_points = len(plan)
-        for j in range(min(50, num_points)):
-            i = (base_index + j) % num_points
-            i_prev = (base_index + j - 1) % num_points
-            
-            # Calculate distance to this waypoint
-            if j > 0:
-                dx = plan[i][0] - plan[i_prev][0]
-                dy = plan[i][1] - plan[i_prev][1]
-                cumulative_brake_distance += math.sqrt(dx*dx + dy*dy)
-            
-            # Stop checking if we've looked far enough ahead
-            if cumulative_brake_distance > BRAKE_LOOKAHEAD_DISTANCE:
-                break
-            
-            # Check if this waypoint has a lower velocity
-            future_waypoint_velocity = plan[i][2] if len(plan[i]) > 2 else 0.0
-            if future_waypoint_velocity > 0.0:
-                future_waypoint_speed = min(100.0, future_waypoint_velocity * VELOCITY_SCALE_FACTOR)
-                
-                # If we need to slow down ahead
-                if future_waypoint_speed < target_speed:
-                    # Calculate required deceleration
-                    # Using v^2 = u^2 + 2as, where we need to slow from current to future speed
-                    # Rearranging: a = (v^2 - u^2) / (2s)
-                    # Convert speeds to approximate m/s for calculation (divide by VELOCITY_SCALE_FACTOR)
-                    current_vel_ms = current_speed_cmd / VELOCITY_SCALE_FACTOR
-                    future_vel_ms = future_waypoint_speed / VELOCITY_SCALE_FACTOR
-                    
-                    if cumulative_brake_distance > 0.1:  # Avoid division by zero
-                        # Calculate needed deceleration (will be negative)
-                        needed_decel = (future_vel_ms**2 - current_vel_ms**2) / (2.0 * cumulative_brake_distance)
-                        
-                        # Apply safety factor to brake earlier
-                        adjusted_distance = cumulative_brake_distance / BRAKE_SAFETY_FACTOR
-                        needed_decel_safe = (future_vel_ms**2 - current_vel_ms**2) / (2.0 * adjusted_distance)
-                        
-                        # If we need significant braking, apply it
-                        if needed_decel_safe < -0.5:  # Threshold for when to start braking (m/s^2)
-                            brake_needed = True
-                            future_speed = future_waypoint_speed
-                            break
-        
-        # Apply braking if needed
-        if brake_needed:
-            # Gradually reduce speed toward the future target
-            # Use negative acceleration (braking)
-            speed_diff = current_speed_cmd - future_speed
-            if speed_diff > 5.0:  # Only brake if difference is significant
-                # Apply braking (negative value)
-                command.speed = -min(MAX_DECELERATION, speed_diff * 0.5)
-            else:
-                command.speed = target_speed
-        else:
-            # No braking needed, go full speed
-            command.speed = target_speed
-    else:
-        # Fall back to dynamic velocity scaling based on steering angle
-        abs_steering = abs(command.steering_angle)
-        speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
-        command.speed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * speed_scale
-    
+    # Linear velocity scaling based on steering angle
+    # When steering is 0, speed is max_speed
+    # When steering is at max (100), speed is min_speed
+    speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
+    command.speed = min_speed + (max_speed - min_speed) * speed_scale
     current_speed_cmd = command.speed
     command_pub.publish(command)
 
