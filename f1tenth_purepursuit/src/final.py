@@ -48,7 +48,7 @@ def preprocess_lidar(scan):
     
     return ranges
 
-def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment):
+def check_for_obstacles(lidar_data, position, distance_threshold, angle_min, angle_increment):
     """
     Detect car-sized obstacles (not walls) by checking for consecutive detections.
     A car is typically 0.3-0.5m wide, while walls are much wider.
@@ -79,8 +79,8 @@ def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment)
     in_group = False
     group_start = 0
     
-    for i in range(len(window)):
-        if window[i] < range:
+    for i in xrange(len(window)):
+        if window[i] < distance_threshold:
             if not in_group:
                 in_group = True
                 group_start = i
