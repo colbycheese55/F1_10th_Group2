@@ -405,11 +405,14 @@ def get_lookahead_waypoint(car_x, car_y, heading, lookahead_distance, base_index
     if target_x_world is None:
         return None, None, -1
     
-    # Transform target point to vehicle frame
+    # Transform target point to vehicle frame (CONSISTENT with transform_waypoints_to_vehicle)
     dx = target_x_world - car_x
     dy = target_y_world - car_y
-    target_x_vehicle = math.cos(heading) * dx + math.sin(heading) * dy
-    target_y_vehicle = -math.sin(heading) * dx + math.cos(heading) * dy
+    # Rotation by -heading (world → vehicle)
+    cos_h = math.cos(-heading)
+    sin_h = math.sin(-heading)
+    target_x_vehicle = cos_h * dx - sin_h * dy
+    target_y_vehicle = sin_h * dx + cos_h * dy
     
     return ([target_x_vehicle, target_y_vehicle], 
             [target_x_world, target_y_world], 
@@ -455,7 +458,7 @@ def grid_to_local(point):
 
 
 def populate_occupancy_grid(ranges, angle_increment, angle_min):
-    """Populate occupancy grid using LiDAR scans."""
+    """Populate occupancy grid using LiDAR scans in base_link frame."""
     global occupancy_grid
     
     IS_OCCUPIED = 100
@@ -466,18 +469,29 @@ def populate_occupancy_grid(ranges, angle_increment, angle_min):
     ranges = np.array(ranges)
     indices = np.arange(len(ranges))
     
-    # Calculate angles (adjusting for sensor orientation)
+    # Calculate angles in LiDAR frame
     thetas = angle_min + indices * angle_increment
     
     # Filter valid ranges
     valid_mask = (ranges > 0.1) & (ranges < MAX_LOOKAHEAD)
     
-    # Convert to local coordinates (in vehicle frame)
-    xs = ranges * np.cos(thetas)
-    ys = ranges * np.sin(thetas)
+    # Convert to Cartesian in LiDAR frame
+    xs_lidar = ranges * np.cos(thetas)
+    ys_lidar = ranges * np.sin(thetas)
     
-    # Convert to grid coordinates
-    i, j = local_to_grid_parallel(xs, ys)
+    # Transform to base_link frame
+    # Typical F1Tenth: LiDAR is rotated 180° and slightly offset
+    # Check your URDF, but common transform is:
+    # xs_base = -xs_lidar  (LiDAR x points backward)
+    # ys_base = -ys_lidar  (LiDAR y points right, base y points left)
+    # Adjust based on your robot's actual transform!
+    
+    # For now, assuming standard F1Tenth mounting (LiDAR rotated 180°):
+    xs_base = -xs_lidar  
+    ys_base = -ys_lidar
+    
+    # Convert to grid coordinates (base_link frame: x=forward, y=left)
+    i, j = local_to_grid_parallel(xs_base, ys_base)
     
     # Mark occupied cells
     occupied_indices = np.where(
@@ -711,6 +725,15 @@ def scan_callback(scan_msg):
         scan_msg.angle_increment,
         scan_msg.angle_min
     )
+
+    # Debug: check if cell directly in front is marked when obstacle is visible
+    front_cell = local_to_grid(0.5, 0.0)  # 0.5m ahead, centered
+    if 0 <= front_cell[0] < grid_height and 0 <= front_cell[1] < grid_width:
+        rospy.loginfo_throttle(1.0, "Front cell (0.5m ahead): occupied={}".format(
+            occupancy_grid[front_cell[0], front_cell[1]] == 100
+        ))
+
+
     convolve_occupancy_grid()
     
     # Publish occupancy grid for visualization (use base_link frame, not laser frame)
@@ -836,11 +859,11 @@ def scan_callback(scan_msg):
     
     # Visualization
     utils.draw_marker_array(
-        scan_msg.header.frame_id, scan_msg.header.stamp, 
+        '{}/base_link'.format(car_name), scan_msg.header.stamp, 
         path_local, avoidance_path_array_pub
     )
     utils.draw_lines(
-        scan_msg.header.frame_id, scan_msg.header.stamp, 
+        '{}/base_link'.format(car_name), scan_msg.header.stamp, 
         path_local, avoidance_path_pub
     )
 
