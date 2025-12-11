@@ -9,7 +9,7 @@ from ackermann_msgs.msg import AckermannDrive
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 
-import f1tenth_purepursuit.src.final as final 
+import shared
 
 # =========================
 # Configuration parameters
@@ -597,8 +597,8 @@ class FollowTheGapNode(object):
         cmd.speed = velocity_cmd
 
         # coordination between modes function
-        final.follow_gap_recent_cmd = cmd
-        if not final.drive_mode == "follow_the_gap":
+        shared.follow_gap_recent_cmd = cmd
+        if not shared.drive_mode == "follow_the_gap":
             return
 
         self.command_pub.publish(cmd)
@@ -622,14 +622,12 @@ class FollowTheGapNode(object):
         )
 
 def main():
-    rospy.init_node('follow_the_gap', anonymous=True)
     rospy.loginfo("Follow the Gap node started (Disparity Extender)")
     _ = FollowTheGapNode()
-    rospy.spin()
 
-if __name__ == '__main__':
-    try:
-        main()
-    except rospy.ROSInterruptException:
-        rospy.loginfo("Follow the Gap node terminated")
+try:
+    main()
+except rospy.ROSInterruptException:
+    rospy.loginfo("Follow the Gap node terminated")
+        
 

@@ -8,17 +8,16 @@ import numpy as np
 from ackermann_msgs.msg import AckermannDrive
 from sensor_msgs.msg import LaserScan
 
+import followthegap2
+import pure_pursuit2
+import shared
+
 
 LIDAR_SMOOTH_WINDOW = 7
 MIN_RANGE_OBSTACLE = 0.18
 OBSTACLE_DIST_FRONT = 1.0
 OBSTACLE_DIST_SIDE = 0.4
 
-
-# globals variables used to coordinate
-pure_pursuit_recent_cmd = AckermannDrive()
-follow_gap_recent_cmd = AckermannDrive()
-drive_mode = "pure_pursuit"  # default mode
 
 
 def smooth_lidar(ranges, window_size):
@@ -72,7 +71,7 @@ def lidar_callback(data):
         obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
         if obstacle_front:
             rospy.loginfo("Switching to follow_the_gap mode.")
-            drive_mode = "follow_the_gap"
+            shared.drive_mode = "follow_the_gap"
 
     elif drive_mode == "follow_the_gap":
         obstacle_right = check_for_obstacles(ranges, "right", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
@@ -80,7 +79,7 @@ def lidar_callback(data):
         obstacle_left = check_for_obstacles(ranges, "left", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
         if not obstacle_right and not obstacle_front and not obstacle_left:
             rospy.loginfo("Switching to pure_pursuit mode.")
-            drive_mode = "pure_pursuit"
+            shared.drive_mode = "pure_pursuit"
 
 def main():
     try:

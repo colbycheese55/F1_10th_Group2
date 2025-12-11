@@ -15,7 +15,7 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
 import tf
 
-import final
+import shared
 
 # Global variables for storing the path, path resolution, frame ID, and car details
 plan                = []
@@ -389,8 +389,8 @@ def purepursuit_control_node(data):
     current_speed_cmd = command.speed
 
     # coordination between modes function
-    final.pure_pursuit_recent_cmd = command
-    if not final.drive_mode == "pure_pursuit":
+    shared.pure_pursuit_recent_cmd = command
+    if not shared.drive_mode == "pure_pursuit":
         return
 
     command_pub.publish(command)
@@ -421,24 +421,21 @@ def purepursuit_control_node(data):
     wp_seq = wp_seq + 1
     polygon_pub.publish(control_polygon)
 
-if __name__ == '__main__':
 
-    try:
+try:
 
-        rospy.init_node('pure_pursuit', anonymous = True)
-        if not plan:
-            rospy.loginfo('obtaining trajectory')
-            construct_path()
-            # Publish the reference path marker once after loading
-            rospy.sleep(0.5)  # Wait for publishers to be ready
-            publish_path_marker()
-            rospy.loginfo('Published reference path to RViz')
+    if not plan:
+        rospy.loginfo('obtaining trajectory')
+        construct_path()
+        # Publish the reference path marker once after loading
+        rospy.sleep(0.5)  # Wait for publishers to be ready
+        publish_path_marker()
+        rospy.loginfo('Published reference path to RViz')
 
-        # This node subsribes to the pose estimate provided by the Particle Filter. 
-        # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
-        rospy.Subscriber('/car_2/particle_filter/viz/inferred_pose', PoseStamped, purepursuit_control_node)
-        rospy.spin()
+    # This node subsribes to the pose estimate provided by the Particle Filter. 
+    # The message type of that pose message is PoseStamped which belongs to the geometry_msgs ROS package.
+    rospy.Subscriber('/car_2/particle_filter/viz/inferred_pose', PoseStamped, purepursuit_control_node)
 
-    except rospy.ROSInterruptException:
+except rospy.ROSInterruptException:
 
-        pass
+    pass
