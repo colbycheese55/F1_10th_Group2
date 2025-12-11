@@ -17,7 +17,7 @@ import shared
 
 LIDAR_SMOOTH_WINDOW = 7
 MIN_RANGE_OBSTACLE = 0.5
-OBSTACLE_DIST_FRONT = 3.0
+OBSTACLE_DIST_FRONT = 2.0
 OBSTACLE_DIST_SIDE = 0.4
 
 
@@ -51,9 +51,10 @@ def preprocess_lidar(scan):
 def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment):
     # print("\n\n\n")
     # print(lidar_data)
+    angle_min = math.radians(-30)
     if position == "right":
-        i0 = int(-angle_min)
-        i1 = i1 = int((math.radians(90) - angle_min) / angle_increment)
+        i0 = int(-angle_min / angle_increment)
+        i1 = int((math.radians(90) - angle_min) / angle_increment)
     elif position == "front":
         i0 = int((math.radians(60) - angle_min) / angle_increment)
         i1 = int((math.radians(120) - angle_min) / angle_increment)
@@ -63,12 +64,16 @@ def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment)
 
     # print(lidar_data[i0:i1])
     # print(i0, i1, len(lidar_data), angle_min, angle_increment)
-    print(len(lidar_data[i0:i1] < range))
-    return len(lidar_data[i0:i1] < range) > 20
+    # print(position, i0, i1, len(lidar_data), angle_min)
+
+    print(np.sum(lidar_data[i0:i1] < range))
+    return np.sum(lidar_data[i0:i1] < range) > 90
 
 
 def lidar_callback(data):
+    # print("orig ", data.angle_max)
     ranges = preprocess_lidar(data)
+    # print(ranges)
     angle_min = data.angle_min
     angle_increment = data.angle_increment
     print(shared.drive_mode)

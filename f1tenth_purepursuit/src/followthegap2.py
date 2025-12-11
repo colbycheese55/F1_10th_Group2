@@ -335,8 +335,8 @@ class FollowTheGapNode(object):
             return (target_idx, target_lidar_angle, target_dist)
         else:
             rospy.logwarn("No valid gaps found; defaulting to center")
-            mid_idx = (start_idx + end_idx) // 2
-            return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
+            # mid_idx = (start_idx + end_idx) // 2
+            return None
 
     def find_target_direction_farthest_distance_in_widest_gap(self, ranges, angle_min, angle_increment, start_idx, end_idx):
         # Ensure start_idx <= end_idx
@@ -382,8 +382,8 @@ class FollowTheGapNode(object):
             return (target_idx, target_lidar_angle, target_dist)
         else:
             rospy.logwarn("No valid gaps found; defaulting to center")
-            mid_idx = (start_idx + end_idx) // 2
-            return (mid_idx, angle_min + mid_idx * angle_increment, ranges[mid_idx])
+            # mid_idx = (start_idx + end_idx) // 2
+            return None, None, None
 
     # ---------- Control ----------
 
@@ -580,17 +580,23 @@ class FollowTheGapNode(object):
             processed, scan.angle_min, scan.angle_increment, i0, i1
         )
 
-        # Step 6: Actuate - calculate steering and velocity
-        steering_cmd = self.calculate_steering(target_angle_lidar)
+        if target_idx != None:
+            # Step 6: Actuate - calculate steering and velocity
+            steering_cmd = self.calculate_steering(target_angle_lidar)
 
 
-        
-        # Check side clearance for cornering safety
-        if not self.check_side_clearance(ranges, scan.angle_min, scan.angle_increment, steering_cmd):
-            # Override steering to go straight if obstacle detected on turning side
+            
+            # Check side clearance for cornering safety
+            if not self.check_side_clearance(ranges, scan.angle_min, scan.angle_increment, steering_cmd):
+                # Override steering to go straight if obstacle detected on turning side
+                steering_cmd = 0.0
+            
+            velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
+        else:
             steering_cmd = 0.0
-        
-        velocity_cmd = self.calculate_velocity(steering_cmd, max_dist)
+            velocity_cmd = 0.0
+            target_angle_lidar = 0.0
+            max_dist = 0.0
 
         # Publish AckermannDrive message (steering [-100,100], velocity [0,100])
         cmd = AckermannDrive()
