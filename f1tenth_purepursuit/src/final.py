@@ -50,7 +50,7 @@ wp_seq = 0
 control_polygon = PolygonStamped()
 
 # Progressive slowdown parameters
-MAX_DETECTION_COUNT = 10  # Number of detections before full stop
+MAX_DETECTION_COUNT = 5  # Number of detections before full stop
 MIN_SPEED_FACTOR = 0.2    # Minimum speed factor (10% of normal speed)
 
 # Publishers
@@ -466,10 +466,10 @@ def purepursuit_control_node(data):
         slowdown_factor = 1.0 - (opponent_detection_count / float(MAX_DETECTION_COUNT)) * (1.0 - MIN_SPEED_FACTOR)
         command.speed = command.speed * slowdown_factor
         
-        # Stop completely if detection count is maxed out
+        # Crawl at minimum speed if detection count is maxed out
         if opponent_detection_count >= MAX_DETECTION_COUNT:
-            command.speed = 0.0
-            rospy.logwarn("Stopped: Obstacle persists (count: %d)", opponent_detection_count)
+            command.speed = 10.0
+            rospy.logwarn("Crawling: Obstacle persists (count: %d, speed: 10.0)", opponent_detection_count)
         else:
             rospy.loginfo("Slowing down: count=%d, speed=%.1f (factor=%.2f)", 
                          opponent_detection_count, command.speed, slowdown_factor)
