@@ -1,0 +1,1 @@
+roslaunch f1tenth_purepursuit final.launch trajectory:=wider
