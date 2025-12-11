@@ -37,7 +37,7 @@ V_MAX_LD = 15.0
 # Speed control parameters
 MAX_SPEED = 65.0  # Maximum speed on straightaways
 MIN_SPEED = 5.0   # Minimum speed for sharp turns
-VELOCITY_SCALE_FACTOR = 20.0  # Converts m/s from waypoint to 0-100 range
+VELOCITY_SCALE_FACTOR = 19.0  # Converts m/s from waypoint to 0-100 range
 
 # Pure pursuit steering parameters
 MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians (about 23 degrees)
