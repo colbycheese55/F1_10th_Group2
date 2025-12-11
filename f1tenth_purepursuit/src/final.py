@@ -96,8 +96,8 @@ def check_for_obstacles(lidar_data, position, distance_threshold, angle_min, ang
     
     # Define angular range based on position
     if position == "front":
-        i0 = int((math.radians(75) - angle_min) / angle_increment)
-        i1 = int((math.radians(105) - angle_min) / angle_increment)
+        i0 = int((math.radians(65) - angle_min) / angle_increment)
+        i1 = int((math.radians(115) - angle_min) / angle_increment)
     elif position == "right":
         i0 = int(-angle_min / angle_increment)
         i1 = int((math.radians(90) - angle_min) / angle_increment)
@@ -447,7 +447,7 @@ def purepursuit_control_node(data):
     
     # If opponent detected, halve the speed
     if opponent_detected:
-        command.speed = command.speed / 2.0
+        command.speed = command.speed / 4.0
         rospy.loginfo("Opponent detected - reducing speed to %.1f", command.speed)
     
     current_speed_cmd = command.speed
