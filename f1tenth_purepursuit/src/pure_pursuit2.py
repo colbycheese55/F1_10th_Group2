@@ -235,7 +235,7 @@ L_MAX    = 2
 
 # Speed range where we interpolate (same units as command.speed)
 V_MIN_LD = 8.0
-V_MAX_LD = 15.0
+V_MAX_LD = 25.0
 
 # last commanded speed (used as our speed estimate)
 current_speed_cmd = 0.0
@@ -383,7 +383,7 @@ def purepursuit_control_node(data):
     abs_steering = abs(command.steering_angle)
     
     # Define speed parameters
-    max_speed = 30.0  # Maximum speed on straightaways
+    max_speed = 50.0  # Maximum speed on straightaways
     min_speed = 10.0   # Minimum speed for sharp turns
     
     # Linear velocity scaling based on steering angle

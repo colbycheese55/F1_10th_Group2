@@ -17,7 +17,7 @@ import shared
 
 LIDAR_SMOOTH_WINDOW = 7
 MIN_RANGE_OBSTACLE = 0.5
-OBSTACLE_DIST_FRONT = 2.0
+OBSTACLE_DIST_FRONT = 1.5
 OBSTACLE_DIST_SIDE = 0.4
 
 
@@ -58,8 +58,8 @@ def check_for_obstacles(lidar_data, position, distance_threshold, angle_min, ang
         i0 = int(-angle_min / angle_increment)
         i1 = int((math.radians(90) - angle_min) / angle_increment)
     elif position == "front":
-        i0 = int((math.radians(60) - angle_min) / angle_increment)
-        i1 = int((math.radians(120) - angle_min) / angle_increment)
+        i0 = int((math.radians(75) - angle_min) / angle_increment)
+        i1 = int((math.radians(105) - angle_min) / angle_increment)
     elif position == "left":
         i0 = int((math.radians(90) - angle_min) / angle_increment)
         i1 = int((math.radians(180) - angle_min) / angle_increment)
@@ -102,18 +102,19 @@ def check_for_obstacles(lidar_data, position, distance_threshold, angle_min, ang
     # At closer distances, it spans more degrees
     # We'll accept groups between 5 and 60 degrees (car-sized, not wall-sized)
     CAR_MIN_ANGLE_DEG = 5   # Minimum angular width for a car
-    CAR_MAX_ANGLE_DEG = 20  # Maximum angular width (walls are typically wider)
+    CAR_MAX_ANGLE_DEG = 15  # Maximum angular width (walls are typically wider)
     
     for group_length in groups:
         angle_width_deg = math.degrees(group_length * angle_increment)
         
         # If we find a group that's car-sized, return True
         if CAR_MIN_ANGLE_DEG <= angle_width_deg <= CAR_MAX_ANGLE_DEG:
-            print(f"Car detected: {angle_width_deg:.1f} degrees wide, {group_length} indices")
+            # print(f"Car detected: {angle_width_deg:.1f} degrees wide, {group_length} indices")
+            print("car found")
             return True
     
     # All groups are either too small (noise) or too wide (walls)
-    print(f"Only walls/noise detected. Group widths: {[math.degrees(g * angle_increment) for g in groups]}")
+    # print(f"Only walls/noise detected. Group widths: {[math.degrees(g * angle_increment) for g in groups]}")
     return False
 
 
