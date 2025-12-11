@@ -10,7 +10,7 @@ from sensor_msgs.msg import LaserScan
 
 rospy.init_node('final_race', anonymous = True)
 
-import followthegap2
+# import followthegap2
 import pure_pursuit2
 import shared
 
@@ -71,27 +71,10 @@ def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment)
 
 
 def lidar_callback(data):
-    # print("orig ", data.angle_max)
     ranges = preprocess_lidar(data)
-    # print(ranges)
-    angle_min = data.angle_min
     angle_increment = data.angle_increment
-    print(shared.drive_mode)
 
-    if shared.drive_mode == "pure_pursuit":
-        obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
-        if obstacle_front:
-            rospy.loginfo("Switching to follow_the_gap mode.")
-            shared.drive_mode = "follow_the_gap"
-
-    elif shared.drive_mode == "follow_the_gap":
-        obstacle_right = check_for_obstacles(ranges, "right", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
-        obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
-        obstacle_left = check_for_obstacles(ranges, "left", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
-        print(obstacle_right, obstacle_front, obstacle_left)
-        if not obstacle_right and not obstacle_front and not obstacle_left:
-            rospy.loginfo("Switching to pure_pursuit mode.")
-            shared.drive_mode = "pure_pursuit"
+    shared.opponent_detected = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, data.angle_min, angle_increment)
 
 def main():
     try:

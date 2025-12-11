@@ -399,7 +399,10 @@ def purepursuit_control_node(data):
         return
     print(command.speed)
 
-    command_pub.publish(command)
+    if not shared.opponent_detected:
+        command_pub.publish(command)
+    else:
+        command_pub.publish(AckermannDrive())  # Stop the car if opponent detected
 
     # Publish RViz visualization markers for reference path, pose, target, and steering angle
     publish_visualization_markers(odom_x, odom_y, heading, pose_x, pose_y, target_x, target_y, steering_angle, lookahead_distance)
