@@ -9,7 +9,7 @@ from ackermann_msgs.msg import AckermannDrive
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 
-import final 
+import f1tenth_purepursuit.src.final as final 
 
 # =========================
 # Configuration parameters
