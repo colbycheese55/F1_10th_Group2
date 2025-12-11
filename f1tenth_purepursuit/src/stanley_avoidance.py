@@ -55,7 +55,7 @@ VELOCITY_PERCENTAGE = 1.0     # Multiplier for target velocity (1.0 = 100%, 0.5 
 # Steering parameters
 MAX_STEERING_ANGLE_RAD = 0.4  # Maximum steering angle in radians
 STEERING_LIMIT_DEG = 25.0     # Steering limit in degrees
-STEERING_BIAS_DEG = 5.0       # Steering bias to correct for hardware issues (positive = right)
+STEERING_BIAS_DEG = 3.0       # Steering bias to correct for hardware issues (positive = right)
 
 # Occupancy grid parameters
 GRID_WIDTH_METERS = 3.0     # Width of occupancy grid in meters
