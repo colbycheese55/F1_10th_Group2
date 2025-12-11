@@ -63,19 +63,17 @@ def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment)
 
 
 def lidar_callback(data):
-    global drive_mode
-
     ranges = preprocess_lidar(data)
     angle_min = data.angle_min
     angle_increment = data.angle_increment
 
-    if drive_mode == "pure_pursuit":
+    if shared.drive_mode == "pure_pursuit":
         obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
         if obstacle_front:
             rospy.loginfo("Switching to follow_the_gap mode.")
             shared.drive_mode = "follow_the_gap"
 
-    elif drive_mode == "follow_the_gap":
+    elif shared.drive_mode == "follow_the_gap":
         obstacle_right = check_for_obstacles(ranges, "right", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
         obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
         obstacle_left = check_for_obstacles(ranges, "left", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
