@@ -8,6 +8,8 @@ import numpy as np
 from ackermann_msgs.msg import AckermannDrive
 from sensor_msgs.msg import LaserScan
 
+rospy.init_node('final_race', anonymous = True)
+
 import followthegap2
 import pure_pursuit2
 import shared
@@ -83,7 +85,6 @@ def lidar_callback(data):
 
 def main():
     try:
-        rospy.init_node('final_race', anonymous = True)
         rospy.loginfo("Final race node started.")
         rospy.Subscriber("/car_2/scan", LaserScan, lidar_callback)
         rospy.spin()
