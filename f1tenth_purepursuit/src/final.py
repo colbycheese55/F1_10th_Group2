@@ -453,7 +453,7 @@ def purepursuit_control_node(data):
     
     # Dynamic velocity scaling based on steering angle
     abs_steering = abs(command.steering_angle)
-    max_speed = 50.0
+    max_speed = 65.0
     min_speed = 10.0
     
     speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
