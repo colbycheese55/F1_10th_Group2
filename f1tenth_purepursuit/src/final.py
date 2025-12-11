@@ -453,8 +453,8 @@ def purepursuit_control_node(data):
     
     # Dynamic velocity scaling based on steering angle
     abs_steering = abs(command.steering_angle)
-    max_speed = 65.0
-    min_speed = 10.0
+    max_speed = 70.0
+    min_speed = 15.0
     
     speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
     command.speed = min_speed + (max_speed - min_speed) * speed_scale
@@ -468,7 +468,7 @@ def purepursuit_control_node(data):
         
         # Crawl at minimum speed if detection count is maxed out
         if opponent_detection_count >= MAX_DETECTION_COUNT:
-            command.speed = 10.0
+            command.speed = 15.0
             rospy.logwarn("Crawling: Obstacle persists (count: %d, speed: 10.0)", opponent_detection_count)
         else:
             rospy.loginfo("Slowing down: count=%d, speed=%.1f (factor=%.2f)", 
