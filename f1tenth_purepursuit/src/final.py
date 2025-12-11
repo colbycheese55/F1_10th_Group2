@@ -50,7 +50,7 @@ wp_seq = 0
 control_polygon = PolygonStamped()
 
 # Progressive slowdown parameters
-MAX_DETECTION_COUNT = 20  # Number of detections before full stop
+MAX_DETECTION_COUNT = 10  # Number of detections before full stop
 MIN_SPEED_FACTOR = 0.1    # Minimum speed factor (10% of normal speed)
 
 # Publishers
