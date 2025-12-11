@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import rospy
+import math
+import numpy as np
+
+from ackermann_msgs.msg import AckermannDrive
+from sensor_msgs.msg import LaserScan
+
+
+LIDAR_SMOOTH_WINDOW = 7
+MIN_RANGE_OBSTACLE = 0.18
+OBSTACLE_DIST_FRONT = 1.0
+OBSTACLE_DIST_SIDE = 0.4
+
+
+# globals variables used to coordinate
+pure_pursuit_recent_cmd = AckermannDrive()
+follow_gap_recent_cmd = AckermannDrive()
+drive_mode = "pure_pursuit"  # default mode
+
+
+def smooth_lidar(ranges, window_size):
+    if window_size <= 1:
+        return ranges
+    
+    # Create a normalized averaging kernel
+    kernel = np.ones(window_size) / window_size
+    
+    # Apply convolution with 'same' mode to maintain array size
+    # Use 'same' mode to keep the same length as input
+    smoothed = np.convolve(ranges, kernel, mode='same')
+    
+    return smoothed
+
+def preprocess_lidar(scan):
+    ranges = np.array(scan.ranges, dtype=np.float32)
+    # Replace NaN/Inf with a large value (treat as no obstacle)
+    ranges = np.where(np.isfinite(ranges), ranges, 10.0)
+    # Treat anything too close as blocked (clip)
+    ranges = np.where(ranges < MIN_RANGE_OBSTACLE, MIN_RANGE_OBSTACLE, ranges)
+    
+    # Apply moving average smoothing filter
+    if LIDAR_SMOOTH_WINDOW > 1:
+        ranges = smooth_lidar(ranges, LIDAR_SMOOTH_WINDOW)
+    
+    return ranges
+
+def check_for_obstacles(lidar_data, position, range, angle_min, angle_increment):
+    if position == "right":
+        i0 = 0
+        i1 = i1 = int((90 - angle_min) / angle_increment)
+    elif position == "front":
+        i0 = int((60 - angle_min) / angle_increment)
+        i1 = int((120 - angle_min) / angle_increment)
+    elif position == "left":
+        i0 = int((90 - angle_min) / angle_increment)
+        i1 = int((180 - angle_min) / angle_increment)
+
+    return any(lidar_data[i0:i1] < range)
+
+
+def lidar_callback(data):
+    global drive_mode
+
+    ranges = preprocess_lidar(data)
+    angle_min = data.angle_min
+    angle_increment = data.angle_increment
+
+    if drive_mode == "pure_pursuit":
+        obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
+        if obstacle_front:
+            rospy.loginfo("Switching to follow_the_gap mode.")
+            drive_mode = "follow_the_gap"
+
+    elif drive_mode == "follow_the_gap":
+        obstacle_right = check_for_obstacles(ranges, "right", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
+        obstacle_front = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, angle_min, angle_increment)
+        obstacle_left = check_for_obstacles(ranges, "left", OBSTACLE_DIST_SIDE, angle_min, angle_increment)
+        if not obstacle_right and not obstacle_front and not obstacle_left:
+            rospy.loginfo("Switching to pure_pursuit mode.")
+            drive_mode = "pure_pursuit"
+
+def main():
+    try:
+        rospy.init_node('final_race', anonymous = True)
+        rospy.loginfo("Final race node started.")
+        rospy.Subscriber("/car_2/scan", LaserScan, lidar_callback)
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass
+
+
+
+
+if __name__ == '__main__':
+    main()
