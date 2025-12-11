@@ -542,6 +542,7 @@ class FollowTheGapNode(object):
     # ---------- Callback ----------
 
     def lidar_callback(self, scan):
+        
         """
         DISPARITY EXTENDER ALGORITHM:
         

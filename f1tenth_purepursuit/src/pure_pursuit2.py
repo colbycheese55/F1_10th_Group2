@@ -378,8 +378,8 @@ def purepursuit_control_node(data):
     abs_steering = abs(command.steering_angle)
     
     # Define speed parameters
-    max_speed = 65.0  # Maximum speed on straightaways
-    min_speed = 5.0   # Minimum speed for sharp turns
+    max_speed = 30.0  # Maximum speed on straightaways
+    min_speed = 10.0   # Minimum speed for sharp turns
     
     # Linear velocity scaling based on steering angle
     # When steering is 0, speed is max_speed
@@ -392,6 +392,7 @@ def purepursuit_control_node(data):
     shared.pure_pursuit_recent_cmd = command
     if not shared.drive_mode == "pure_pursuit":
         return
+    print(command.speed)
 
     command_pub.publish(command)
 
