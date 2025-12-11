@@ -45,8 +45,13 @@ V_MAX_LD = 25.0
 # State variables
 current_speed_cmd = 0.0
 opponent_detected = False
+opponent_detection_count = 0  # Counter for consecutive detections
 wp_seq = 0
 control_polygon = PolygonStamped()
+
+# Progressive slowdown parameters
+MAX_DETECTION_COUNT = 20  # Number of detections before full stop
+MIN_SPEED_FACTOR = 0.1    # Minimum speed factor (10% of normal speed)
 
 # Publishers
 command_pub = None
@@ -153,14 +158,23 @@ def check_for_obstacles(lidar_data, position, distance_threshold, angle_min, ang
 
 
 def lidar_callback(data):
-    """Process LiDAR data and update opponent detection state."""
-    global opponent_detected
+    """Process LiDAR data and update opponent detection state with progressive counting."""
+    global opponent_detected, opponent_detection_count
     
     ranges = preprocess_lidar(data)
     angle_increment = data.angle_increment
     
-    opponent_detected = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, 
-                                           data.angle_min, angle_increment)
+    detected_now = check_for_obstacles(ranges, "front", OBSTACLE_DIST_FRONT, 
+                                       data.angle_min, angle_increment)
+    
+    # Progressive detection counter
+    if detected_now:
+        opponent_detected = True
+        opponent_detection_count = min(opponent_detection_count + 1, MAX_DETECTION_COUNT)
+    else:
+        opponent_detected = False
+        # Decay the counter when no detection (recover speed gradually)
+        opponent_detection_count = max(opponent_detection_count - 4, 0)
 
 
 # ============================================================
@@ -445,10 +459,20 @@ def purepursuit_control_node(data):
     speed_scale = 1.0 - (abs_steering / STEERING_RANGE)
     command.speed = min_speed + (max_speed - min_speed) * speed_scale
     
-    # If opponent detected, halve the speed
-    if opponent_detected:
-        command.speed = command.speed / 4.0
-        rospy.loginfo("Opponent detected - reducing speed to %.1f", command.speed)
+    # Progressive slowdown based on detection count
+    if opponent_detection_count > 0:
+        # Calculate speed reduction factor based on detection count
+        # Goes from 1.0 (no reduction) to MIN_SPEED_FACTOR (heavy reduction)
+        slowdown_factor = 1.0 - (opponent_detection_count / float(MAX_DETECTION_COUNT)) * (1.0 - MIN_SPEED_FACTOR)
+        command.speed = command.speed * slowdown_factor
+        
+        # Stop completely if detection count is maxed out
+        if opponent_detection_count >= MAX_DETECTION_COUNT:
+            command.speed = 0.0
+            rospy.logwarn("Stopped: Obstacle persists (count: %d)", opponent_detection_count)
+        else:
+            rospy.loginfo("Slowing down: count=%d, speed=%.1f (factor=%.2f)", 
+                         opponent_detection_count, command.speed, slowdown_factor)
     
     current_speed_cmd = command.speed
     
